@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>日历 · 我的工作台</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div class="layout" id="layout"></div>
+<nav class="tabbar" id="tabbar"></nav>
+<div class="main">
+  <div class="page-head">
+    <div><h2>日历</h2><div class="sub">记录每个时间块做了什么，可关联到待办</div></div>
+  </div>
+  <div class="card" style="padding:16px;">
+    <div class="cal-head">
+      <button class="btn sm" id="prevMonth">‹ 上月</button>
+      <h3 id="calTitle">—</h3>
+      <button class="btn sm" id="nextMonth">下月 ›</button>
+    </div>
+    <div class="cal-grid" id="calDows"></div>
+    <div class="cal-grid" id="calGrid"></div>
+    <div class="cal-legend" id="calLegend"></div>
+  </div>
+</div>
+<script src="common.js"></script>
+<script>
+document.getElementById('layout').innerHTML = renderNav('calendar');
+document.getElementById('tabbar').innerHTML = NAV_ITEMS.map(it =>
+  `<a class="tab-item ${it.id==='calendar'?'active':''}" href="${it.href}">${it.icon}<span>${it.label}</span></a>`
+).join('');
+
+const DOWS = ['一','二','三','四','五','六','日'];
+let todos = [], dones = [];
+let calMonth = new Date();
+
+async function load() {
+  [todos, dones] = await Promise.all([API.todos(), API.dones()]);
+  render();
+}
+
+function render() {
+  const m = calMonth;
+  const y = m.getFullYear(), mo = m.getMonth();
+  document.getElementById('calTitle').textContent = `${y}年${mo+1}月`;
+  document.getElementById('calDows').innerHTML = DOWS.map(d=>`<div class="cal-dow">${d}</div>`).join('');
+
+  const first = new Date(y, mo, 1);
+  const startDay = (first.getDay()+6)%7;
+  const daysInMonth = new Date(y, mo+1, 0).getDate();
+  const today = fmtDate(new Date());
+  const cells = [];
+  for (let i=0; i<startDay; i++) {
+    const d = new Date(y, mo, i - startDay + 1);
+    cells.push({ date: fmtDate(d), other: true });
+  }
+  for (let i=1; i<=daysInMonth; i++) cells.push({ date: fmtDate(new Date(y,mo,i)), other: false });
+  while (cells.length % 7 !== 0) {
+    const last = new Date(cells[cells.length-1].date);
+    last.setDate(last.getDate()+1);
+    cells.push({ date: fmtDate(last), other: true });
+  }
+
+  const grid = document.getElementById('calGrid');
+  grid.innerHTML = cells.map(c => {
+    const dayDones = dones.filter(d => d.date === c.date);
+    const blocks = dayDones.slice(0,3).map(d => {
+      const color = d.todo_id ? todoColor(todos, d.todo_id) : 'var(--module-3)';
+      return `<div class="cal-block" style="border-left-color:${color}">${d.start_time} ${esc(d.title)}</div>`;
+    }).join('');
+    const more = dayDones.length > 3 ? `<div class="cal-block more">+${dayDones.length-3}</div>` : '';
+    return `<div class="cal-cell ${c.other?'other':''} ${c.date===today?'today':''}" data-date="${c.date}">
+      <div class="cal-num">${new Date(c.date).getDate()}</div>${blocks}${more}
+    </div>`;
+  }).join('');
+
+  grid.querySelectorAll('.cal-cell').forEach(c => {
+    c.addEventListener('click', () => openDay(c.dataset.date));
+  });
+
+  const roots = todos.filter(t => !t.parent_id);
+  document.getElementById('calLegend').innerHTML = roots.slice(0,8).map(r =>
+    `<div class="lg"><span class="sw" style="background:${todoColor(todos,r.id)}"></span>${esc(r.title)}</div>`
+  ).join('') + (dones.some(d=>!d.todo_id) ? '<div class="lg"><span class="sw" style="background:var(--module-3)"></span>未关联</div>' : '');
+}
+
+function openDay(date) {
+  const dayDones = dones.filter(d => d.date === date).sort((a,b)=>a.start_time.localeCompare(b.start_time));
+  const list = dayDones.length === 0
+    ? '<div class="tree-empty">这一天还没有记录</div>'
+    : dayDones.map(d => {
+        const t = getTodo(todos, d.todo_id);
+        const color = t ? todoColor(todos, d.todo_id) : 'var(--module-3)';
+        return `<div class="day-rec">
+          <div class="bar" style="background:${color}"></div>
+          <div class="rbody">
+            <div class="rtitle">${esc(d.title)} <span style="font-weight:400;color:var(--text-secondary);font-size:12px;">${t?'· '+esc(t.title):''}</span></div>
+            <div class="rmeta">${d.start_time}–${d.end_time}（${fmtMin(durationMin(d.start_time,d.end_time))}）</div>
+            ${d.note?`<div class="rnote">${esc(d.note)}</div>`:''}
+          </div>
+          <span class="icon-btn" onclick="delDone('${d.id}')" title="删除"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6"/></svg></span>
+        </div>`;
+      }).join('');
+
+  const todoOpts = '<option value="">— 不关联 —</option>' + todos.map(t => {
+    const depth = ancestorDepth(todos, t.id);
+    return `<option value="${t.id}">${'　'.repeat(depth)}${esc(t.title)}</option>`;
+  }).join('');
+
+  const html = `
+    <div class="day-records">${list}</div>
+    <h4 style="font-size:14px;margin-bottom:12px;color:var(--text-secondary);">添加记录</h4>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div class="field" style="grid-column:1/-1"><label>做了什么</label><input type="text" id="dTitle" placeholder="例如：撰写需求文档"></div>
+      <div class="field"><label>关联待办</label><select id="dTodo">${todoOpts}</select></div>
+      <div class="field"><label>日期</label><input type="date" id="dDate" value="${date}"></div>
+      <div class="field"><label>开始</label><input type="time" id="dStart" value="09:00"></div>
+      <div class="field"><label>结束</label><input type="time" id="dEnd" value="10:00"></div>
+      <div class="field" style="grid-column:1/-1"><label>备注 / 想法</label><textarea id="dNote" placeholder="记录想法、进展、收获..."></textarea></div>
+    </div>
+  `;
+  openModal(date + ' 时间块', html, async () => {
+    const title = document.getElementById('dTitle').value.trim();
+    if (!title) { toast('请填写内容'); return; }
+    const d = {
+      title,
+      todo_id: document.getElementById('dTodo').value || null,
+      date: document.getElementById('dDate').value,
+      start_time: document.getElementById('dStart').value,
+      end_time: document.getElementById('dEnd').value,
+      note: document.getElementById('dNote').value.trim()
+    };
+    const res = await API.createDone(d);
+    d.id = res.id;
+    dones.push(d);
+    render(); closeModal(); toast('已添加');
+  });
+}
+
+async function delDone(id) {
+  if (!confirm('删除这条已办记录？')) return;
+  await API.deleteDone(id);
+  dones = dones.filter(d => d.id !== id);
+  render(); closeModal(); toast('已删除');
+}
+
+document.getElementById('prevMonth').addEventListener('click', () => { calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth()-1, 1); render(); });
+document.getElementById('nextMonth').addEventListener('click', () => { calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth()+1, 1); render(); });
+
+load();
+</script>
+</body>
+</html>

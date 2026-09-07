@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>统计 · 我的工作台</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div class="layout" id="layout"></div>
+<nav class="tabbar" id="tabbar"></nav>
+<div class="main">
+  <div class="page-head">
+    <div><h2>统计</h2><div class="sub">本周用时与待办进展汇总</div></div>
+  </div>
+  <div class="card" style="padding:16px;">
+    <div class="stat-toolbar">
+      <button class="btn sm" id="prevWeek">‹ 上周</button>
+      <div class="week-total" id="weekRange">—</div>
+      <button class="btn sm" id="nextWeek">下周 ›</button>
+      <div class="week-total" style="margin-left:auto;">本周合计 <b id="weekTotal">0</b> 小时（<span id="weekCount">0</span> 条）</div>
+    </div>
+    <div class="bar-chart" id="barChart"></div>
+    <div class="stat-sections">
+      <div class="card stat-section">
+        <h4>各待办用时</h4>
+        <div id="todoStats"><div class="tree-empty">加载中...</div></div>
+      </div>
+      <div class="card stat-section">
+        <h4>无关联已办</h4>
+        <div id="orphanStats"><div class="tree-empty">加载中...</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="common.js"></script>
+<script>
+document.getElementById('layout').innerHTML = renderNav('stats');
+document.getElementById('tabbar').innerHTML = NAV_ITEMS.map(it =>
+  `<a class="tab-item ${it.id==='stats'?'active':''}" href="${it.href}">${it.icon}<span>${it.label}</span></a>`
+).join('');
+
+let todos = [], dones = [];
+let statWeek = startOfWeek(new Date());
+const DOWS = ['一','二','三','四','五','六','日'];
+
+async function load() {
+  [todos, dones] = await Promise.all([API.todos(), API.dones()]);
+  render();
+}
+
+function render() {
+  const ws = statWeek;
+  const we = new Date(ws.getTime() + 7*86400000);
+  document.getElementById('weekRange').textContent = `${ws.getMonth()+1}/${ws.getDate()} – ${we.getMonth()+1}/${we.getDate()}`;
+  const weekDones = dones.filter(d => {
+    const dt = new Date(d.date); return dt >= ws && dt < we;
+  });
+  const weekMin = weekDones.reduce((s,d)=>s+durationMin(d.start_time,d.end_time),0);
+  document.getElementById('weekTotal').textContent = (weekMin/60).toFixed(1);
+  document.getElementById('weekCount').textContent = weekDones.length;
+
+  const bars = [];
+  let maxMin = 1;
+  for (let i=0; i<7; i++) {
+    const d = new Date(ws.getTime()+i*86400000);
+    const ds = dones.filter(x => x.date === fmtDate(d));
+    const mins = ds.reduce((s,x)=>s+durationMin(x.start_time,x.end_time),0);
+    maxMin = Math.max(maxMin, mins);
+    bars.push({ day: DOWS[i], mins, count: ds.length });
+  }
+  document.getElementById('barChart').innerHTML = bars.map(b => `
+    <div class="bar-col">
+      <div class="bar-wrap"><div class="bar" style="height:${(b.mins/maxMin*100)}%"><span class="tv">${b.mins>0?fmtMin(b.mins):''}</span></div></div>
+      <div class="dl">${b.day}<br><span style="color:var(--text-tertiary);font-weight:400">${b.count}条</span></div>
+    </div>
+  `).join('');
+
+  const todoMap = {};
+  weekDones.forEach(d => {
+    const k = d.todo_id || '__none';
+    if (!todoMap[k]) todoMap[k] = { mins: 0, items: [] };
+    todoMap[k].mins += durationMin(d.start_time, d.end_time);
+    todoMap[k].items.push(d);
+  });
+  const todoRows = Object.entries(todoMap).filter(([k])=>k!=='__none').map(([id, v]) => {
+    const t = getTodo(todos, id);
+    return { id, title: t ? t.title : '(已删除)', mins: v.mins, items: v.items };
+  }).sort((a,b)=>b.mins-a.mins);
+
+  document.getElementById('todoStats').innerHTML = todoRows.length === 0
+    ? '<div class="tree-empty">本周暂无关联已办</div>'
+    : todoRows.map(r => `
+      <div class="todo-stat-row" onclick="this.nextElementSibling.classList.toggle('show')">
+        <span class="ts-title">${esc(r.title)}</span>
+        <span class="ts-time">${fmtMin(r.mins)}</span>
+      </div>
+      <div class="breakdown">
+        ${r.items.map(it => `<div class="bd-item"><span class="bd-date">${it.date} ${it.start_time}-${it.end_time}</span><span class="bd-time">${fmtMin(durationMin(it.start_time,it.end_time))}</span><div>${esc(it.title)}</div>${it.note?`<div class="bd-note">${esc(it.note)}</div>`:''}</div>`).join('')}
+      </div>
+    `).join('');
+
+  const orphans = (todoMap['__none'] || { items: [] }).items;
+  document.getElementById('orphanStats').innerHTML = orphans.length === 0
+    ? '<div class="tree-empty">无</div>'
+    : orphans.map(it => `<div class="bd-item"><span class="bd-date">${it.date} ${it.start_time}-${it.end_time}</span><span class="bd-time">${fmtMin(durationMin(it.start_time,it.end_time))}</span><div>${esc(it.title)}</div>${it.note?`<div class="bd-note">${esc(it.note)}</div>`:''}</div>`).join('');
+}
+
+document.getElementById('prevWeek').addEventListener('click', () => { statWeek = new Date(statWeek.getTime()-7*86400000); render(); });
+document.getElementById('nextWeek').addEventListener('click', () => { statWeek = new Date(statWeek.getTime()+7*86400000); render(); });
+
+load();
+</script>
+</body>
+</html>
