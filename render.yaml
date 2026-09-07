@@ -1,0 +1,12 @@
+# Render 部署配置
+# 用于 render.com 一键部署
+services:
+  - type: web
+    name: my-workbench
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
