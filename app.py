@@ -321,14 +321,9 @@ def seed_if_empty():
 if __name__ == "__main__":
     init_db()
     seed_if_empty()
-    port = int(os.environ.get("PORT", 5000))
     print("=" * 50)
     print("  个人工作台已启动")
-    print(f"  本地访问:  http://localhost:{port}/")
-    print(f"  局域网访问: http://<本机IP>:{port}/")
+    print(f"  本地访问:  http://localhost:5000/")
+    print(f"  局域网访问: http://<本机IP>:5000/")
     print("=" * 50)
-    app.run(host="0.0.0.0", port=port, debug=False)
-else:
-    # 被 gunicorn 等 WSGI 服务器导入时也初始化数据库
-    init_db()
-    seed_if_empty()
+    app.run(host="0.0.0.0", port=5000, debug=False)
