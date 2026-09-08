@@ -11,7 +11,7 @@
 <nav class="tabbar" id="tabbar"></nav>
 <div class="main">
   <div class="page-head">
-    <div><h2>日历</h2><div class="sub">记录每个时间块做了什么，可关联到待办</div></div>
+    <div><h2>日历</h2><div class="sub">点击日期添加已办，可拖拽调整日期</div></div>
   </div>
   <div class="card" style="padding:16px;">
     <div class="cal-head">
@@ -27,11 +27,8 @@
 <script src="common.js"></script>
 <script>
 document.getElementById('layout').innerHTML = renderNav('calendar');
-document.getElementById('tabbar').innerHTML = NAV_ITEMS.map(it =>
-  `<a class="tab-item ${it.id==='calendar'?'active':''}" href="${it.href}">${it.icon}<span>${it.label}</span></a>`
-).join('');
+document.getElementById('tabbar').innerHTML = renderTabbar('calendar');
 
-const DOWS = ['一','二','三','四','五','六','日'];
 let todos = [], dones = [];
 let calMonth = new Date();
 
@@ -66,83 +63,273 @@ function render() {
   grid.innerHTML = cells.map(c => {
     const dayDones = dones.filter(d => d.date === c.date);
     const blocks = dayDones.slice(0,3).map(d => {
-      const color = d.todo_id ? todoColor(todos, d.todo_id) : 'var(--module-3)';
-      return `<div class="cal-block" style="border-left-color:${color}">${d.start_time} ${esc(d.title)}</div>`;
+      const t = getTodo(todos, d.todo_id);
+      const color = t ? todoColor(todos, d.todo_id) : 'var(--module-3)';
+      const noTime = !d.start_time;
+      return `<div class="cal-block ${noTime?'no-time':''}" draggable="true" data-done-id="${d.id}" style="border-left-color:${color}">${d.start_time ? d.start_time + ' ' : ''}${esc(d.title)}</div>`;
     }).join('');
-    const more = dayDones.length > 3 ? `<div class="cal-block more">+${dayDones.length-3}</div>` : '';
+    const more = dayDones.length > 3 ? `<div class="cal-block more" data-more-date="${c.date}">+${dayDones.length-3} 更多</div>` : '';
     return `<div class="cal-cell ${c.other?'other':''} ${c.date===today?'today':''}" data-date="${c.date}">
       <div class="cal-num">${new Date(c.date).getDate()}</div>${blocks}${more}
     </div>`;
   }).join('');
 
+  // Cell click = add done
   grid.querySelectorAll('.cal-cell').forEach(c => {
-    c.addEventListener('click', () => openDay(c.dataset.date));
+    c.addEventListener('click', (e) => {
+      if (e.target.classList.contains('cal-block') || e.target.classList.contains('more')) return;
+      openAddDone(c.dataset.date);
+    });
+  });
+  // Block click = edit done
+  grid.querySelectorAll('.cal-block').forEach(b => {
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (b.classList.contains('more')) { openDayList(b.dataset.moreDate); return; }
+      openEditDone(b.dataset.doneId);
+    });
   });
 
+  // Calendar DnD
+  bindCalendarDnD();
+
+  // Legend
   const roots = todos.filter(t => !t.parent_id);
   document.getElementById('calLegend').innerHTML = roots.slice(0,8).map(r =>
     `<div class="lg"><span class="sw" style="background:${todoColor(todos,r.id)}"></span>${esc(r.title)}</div>`
-  ).join('') + (dones.some(d=>!d.todo_id) ? '<div class="lg"><span class="sw" style="background:var(--module-3)"></span>未关联</div>' : '');
+  ).join('');
 }
 
-function openDay(date) {
-  const dayDones = dones.filter(d => d.date === date).sort((a,b)=>a.start_time.localeCompare(b.start_time));
-  const list = dayDones.length === 0
-    ? '<div class="tree-empty">这一天还没有记录</div>'
-    : dayDones.map(d => {
-        const t = getTodo(todos, d.todo_id);
-        const color = t ? todoColor(todos, d.todo_id) : 'var(--module-3)';
-        return `<div class="day-rec">
-          <div class="bar" style="background:${color}"></div>
-          <div class="rbody">
-            <div class="rtitle">${esc(d.title)} <span style="font-weight:400;color:var(--text-secondary);font-size:12px;">${t?'· '+esc(t.title):''}</span></div>
-            <div class="rmeta">${d.start_time}–${d.end_time}（${fmtMin(durationMin(d.start_time,d.end_time))}）</div>
-            ${d.note?`<div class="rnote">${esc(d.note)}</div>`:''}
-          </div>
-          <span class="icon-btn" onclick="delDone('${d.id}')" title="删除"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6"/></svg></span>
-        </div>`;
-      }).join('');
-
-  const todoOpts = '<option value="">— 不关联 —</option>' + todos.map(t => {
-    const depth = ancestorDepth(todos, t.id);
-    return `<option value="${t.id}">${'　'.repeat(depth)}${esc(t.title)}</option>`;
-  }).join('');
-
-  const html = `
-    <div class="day-records">${list}</div>
-    <h4 style="font-size:14px;margin-bottom:12px;color:var(--text-secondary);">添加记录</h4>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-      <div class="field" style="grid-column:1/-1"><label>做了什么</label><input type="text" id="dTitle" placeholder="例如：撰写需求文档"></div>
-      <div class="field"><label>关联待办</label><select id="dTodo">${todoOpts}</select></div>
-      <div class="field"><label>日期</label><input type="date" id="dDate" value="${date}"></div>
-      <div class="field"><label>开始</label><input type="time" id="dStart" value="09:00"></div>
-      <div class="field"><label>结束</label><input type="time" id="dEnd" value="10:00"></div>
-      <div class="field" style="grid-column:1/-1"><label>备注 / 想法</label><textarea id="dNote" placeholder="记录想法、进展、收获..."></textarea></div>
-    </div>
-  `;
-  openModal(date + ' 时间块', html, async () => {
-    const title = document.getElementById('dTitle').value.trim();
-    if (!title) { toast('请填写内容'); return; }
-    const d = {
-      title,
-      todo_id: document.getElementById('dTodo').value || null,
-      date: document.getElementById('dDate').value,
-      start_time: document.getElementById('dStart').value,
-      end_time: document.getElementById('dEnd').value,
-      note: document.getElementById('dNote').value.trim()
-    };
-    const res = await API.createDone(d);
-    d.id = res.id;
-    dones.push(d);
-    render(); closeModal(); toast('已添加');
+/* ---------- Calendar drag and drop ---------- */
+let dragDoneId = null;
+function bindCalendarDnD() {
+  const grid = document.getElementById('calGrid');
+  grid.querySelectorAll('.cal-block[draggable]').forEach(b => {
+    b.addEventListener('dragstart', (e) => {
+      dragDoneId = b.dataset.doneId;
+      e.dataTransfer.effectAllowed = 'move';
+      e.stopPropagation();
+      b.classList.add('dragging');
+    });
+    b.addEventListener('dragend', () => {
+      b.classList.remove('dragging');
+      grid.querySelectorAll('.cal-cell').forEach(c => c.classList.remove('drop-target'));
+      dragDoneId = null;
+    });
+  });
+  grid.querySelectorAll('.cal-cell').forEach(c => {
+    c.addEventListener('dragover', (e) => {
+      if (!dragDoneId) return;
+      e.preventDefault();
+      e.stopPropagation();
+      c.classList.add('drop-target');
+    });
+    c.addEventListener('dragleave', () => c.classList.remove('drop-target'));
+    c.addEventListener('drop', async (e) => {
+      if (!dragDoneId) return;
+      e.preventDefault();
+      e.stopPropagation();
+      c.classList.remove('drop-target');
+      const newDate = c.dataset.date;
+      const d = dones.find(x => x.id === dragDoneId);
+      if (d && d.date !== newDate) {
+        d.date = newDate;
+        await API.updateDone(d.id, { date: newDate });
+        render();
+        toast('已移动到 ' + newDate);
+      }
+      dragDoneId = null;
+    });
   });
 }
 
-async function delDone(id) {
-  if (!confirm('删除这条已办记录？')) return;
-  await API.deleteDone(id);
-  dones = dones.filter(d => d.id !== id);
-  render(); closeModal(); toast('已删除');
+/* ---------- Add done with autocomplete ---------- */
+function openAddDone(date) {
+  const html = `
+    <div class="field">
+      <label>关联待办</label>
+      <div class="ac-wrap">
+        <input type="text" id="acInput" placeholder="输入关键词搜索待办..." autocomplete="off">
+        <div class="ac-list" id="acList"></div>
+      </div>
+    </div>
+    <div class="field">
+      <label><input type="checkbox" id="noTime" style="width:auto;display:inline-block;margin-right:6px;">无具体时间段（只记日期）</label>
+    </div>
+    <div id="timeFields" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div class="field"><label>开始</label><input type="time" id="dStart" value="09:00"></div>
+      <div class="field"><label>结束</label><input type="time" id="dEnd" value="10:00"></div>
+    </div>
+    <div class="field"><label>日期</label><input type="date" id="dDate" value="${date}"></div>
+    <div class="field"><label>备注 / 想法</label><textarea id="dNote" placeholder="记录想法、进展、收获..."></textarea></div>
+  `;
+  openModal('添加已办 · ' + fmtDateShort(date), html, async () => {
+    const input = document.getElementById('acInput');
+    const selectedTodoId = input.dataset.todoId;
+    if (!selectedTodoId) { toast('请选择或创建一个待办'); return; }
+    const noTime = document.getElementById('noTime').checked;
+    const t = getTodo(todos, selectedTodoId);
+    const d = {
+      title: t ? t.title : input.value.trim(),
+      todo_id: selectedTodoId,
+      date: document.getElementById('dDate').value,
+      start_time: noTime ? '' : document.getElementById('dStart').value,
+      end_time: noTime ? '' : document.getElementById('dEnd').value,
+      note: document.getElementById('dNote').value.trim()
+    };
+    const res = await API.createDone(d);
+    d.id = res.id; dones.push(d);
+    closeModal(); render(); toast('已添加');
+  });
+  setupAutocomplete(date);
+}
+
+function setupAutocomplete(date) {
+  const input = document.getElementById('acInput');
+  const list = document.getElementById('acList');
+  const noTimeCb = document.getElementById('noTime');
+  const timeFields = document.getElementById('timeFields');
+
+  noTimeCb.addEventListener('change', () => {
+    timeFields.style.display = noTimeCb.checked ? 'none' : 'grid';
+  });
+
+  let highlightIdx = -1;
+  let currentMatches = [];
+
+  function renderList(query) {
+    if (!query) { list.classList.remove('show'); return; }
+    currentMatches = todos.filter(t => !t.is_folder && t.title.toLowerCase().includes(query.toLowerCase())).slice(0, 10);
+    const exactMatch = todos.some(t => !t.is_folder && t.title === query);
+    let html = currentMatches.map((t, i) => {
+      const folderPath = getFolderPath(todos, t.id);
+      return `<div class="ac-item ${i===highlightIdx?'highlight':''}" data-todo-id="${t.id}" data-idx="${i}">
+        <span>${esc(t.title)}</span>
+        ${folderPath.length ? `<span class="ac-folder">${esc(folderPath.join(' › '))}</span>` : ''}
+      </div>`;
+    }).join('');
+    if (!exactMatch) {
+      html += `<div class="ac-item create" data-create="1">+ 创建新待办「${esc(query)}」到收集箱</div>`;
+    }
+    list.innerHTML = html;
+    list.classList.add('show');
+
+    list.querySelectorAll('.ac-item').forEach(item => {
+      item.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        if (item.dataset.create === '1') {
+          handleCreateTodo(query);
+        } else {
+          selectTodo(item.dataset.todoId);
+        }
+      });
+    });
+  }
+
+  function selectTodo(todoId) {
+    const t = getTodo(todos, todoId);
+    input.value = t.title;
+    input.dataset.todoId = todoId;
+    list.classList.remove('show');
+  }
+
+  async function handleCreateTodo(title) {
+    // Find or create 收集箱 folder
+    let inbox = todos.find(t => t.is_folder && t.title === '收集箱' && !t.parent_id);
+    if (!inbox) {
+      const so = getChildren(todos, null).length;
+      const res = await API.createTodo({ title: '收集箱', parent_id: null, sort_order: so, is_folder: 1 });
+      inbox = { id: res.id, title: '收集箱', parent_id: null, is_folder: 1, sort_order: so, expanded: true, done: 0, note: '', deadline: null, importance: 0 };
+      todos.push(inbox);
+    }
+    // Create todo in inbox
+    const so = getChildren(todos, inbox.id).length;
+    const res = await API.createTodo({ title, parent_id: inbox.id, sort_order: so, is_folder: 0, importance: 0 });
+    const newTodo = { id: res.id, title, parent_id: inbox.id, is_folder: 0, sort_order: so, expanded: true, done: 0, note: '', deadline: null, importance: 0 };
+    todos.push(newTodo);
+    inbox.expanded = true;
+    API.updateTodo(inbox.id, { expanded: true });
+    selectTodo(newTodo.id);
+    toast('已创建待办「' + title + '」');
+  }
+
+  input.addEventListener('input', () => {
+    input.dataset.todoId = '';
+    highlightIdx = -1;
+    renderList(input.value.trim());
+  });
+  input.addEventListener('focus', () => { if (input.value.trim()) renderList(input.value.trim()); });
+  input.addEventListener('blur', () => { setTimeout(() => list.classList.remove('show'), 150); });
+  input.addEventListener('keydown', (e) => {
+    if (!list.classList.contains('show')) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); highlightIdx = Math.min(highlightIdx+1, currentMatches.length); updateHighlight(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); highlightIdx = Math.max(highlightIdx-1, -1); updateHighlight(); }
+    else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (highlightIdx >= 0 && highlightIdx < currentMatches.length) {
+        selectTodo(currentMatches[highlightIdx].id);
+      } else {
+        const q = input.value.trim();
+        if (q) handleCreateTodo(q);
+      }
+    }
+  });
+  function updateHighlight() {
+    list.querySelectorAll('.ac-item').forEach((el, i) => {
+      el.classList.toggle('highlight', i === highlightIdx);
+    });
+  }
+}
+
+/* ---------- Edit done ---------- */
+function openEditDone(doneId) {
+  const d = dones.find(x => x.id === doneId);
+  if (!d) return;
+  const t = getTodo(todos, d.todo_id);
+  const folderPath = t ? getFolderPath(todos, t.id) : [];
+  const noTime = !d.start_time;
+  const html = `
+    <div class="field"><label>关联待办</label><div style="padding:10px 12px;background:var(--surface-nested);border-radius:var(--radius-tile);font-weight:600;">${esc(t?.title || '未关联')} ${folderPath.length?`<span style="font-weight:400;color:var(--text-tertiary);font-size:12px;">${esc(folderPath.join(' › '))}</span>`:''}</div></div>
+    <div class="field"><label><input type="checkbox" id="noTime" style="width:auto;display:inline-block;margin-right:6px;" ${noTime?'checked':''}>无具体时间段</label></div>
+    <div id="timeFields" style="display:${noTime?'none':'grid'};grid-template-columns:1fr 1fr;gap:12px;">
+      <div class="field"><label>开始</label><input type="time" id="dStart" value="${d.start_time||'09:00'}"></div>
+      <div class="field"><label>结束</label><input type="time" id="dEnd" value="${d.end_time||'10:00'}"></div>
+    </div>
+    <div class="field"><label>日期</label><input type="date" id="dDate" value="${d.date}"></div>
+    <div class="field"><label>备注 / 想法</label><textarea id="dNote" placeholder="记录想法、进展、收获...">${esc(d.note||'')}</textarea></div>
+  `;
+  openModal('编辑已办', html, async () => {
+    const noTime = document.getElementById('noTime').checked;
+    const updates = {
+      date: document.getElementById('dDate').value,
+      start_time: noTime ? '' : document.getElementById('dStart').value,
+      end_time: noTime ? '' : document.getElementById('dEnd').value,
+      note: document.getElementById('dNote').value.trim()
+    };
+    Object.assign(d, updates);
+    await API.updateDone(d.id, updates);
+    closeModal(); render(); toast('已更新');
+  });
+  document.getElementById('noTime').addEventListener('change', () => {
+    document.getElementById('timeFields').style.display = document.getElementById('noTime').checked ? 'none' : 'grid';
+  });
+}
+
+function openDayList(date) {
+  const dayDones = dones.filter(d => d.date === date).sort((a,b)=>(a.start_time||'').localeCompare(b.start_time||''));
+  const html = dayDones.map(d => {
+    const t = getTodo(todos, d.todo_id);
+    const color = t ? todoColor(todos, d.todo_id) : 'var(--module-3)';
+    return `<div class="day-rec" style="display:flex;gap:10px;padding:10px;border-radius:var(--radius-tile);background:var(--surface-nested);margin-bottom:8px;cursor:pointer;" onclick="openEditDone('${d.id}')">
+      <div style="width:4px;border-radius:4px;background:${color};flex-shrink:0;"></div>
+      <div style="flex:1;">
+        <div style="font-weight:700;">${esc(d.title)}</div>
+        <div style="font-size:12px;color:var(--text-secondary);">${d.start_time ? d.start_time+'–'+d.end_time : '无具体时间'}</div>
+        ${d.note?`<div style="font-size:12.5px;color:var(--text-secondary);margin-top:4px;">${esc(d.note)}</div>`:''}
+      </div>
+    </div>`;
+  }).join('');
+  openModal(fmtDateShort(date) + ' 的已办', html, null, { hideFoot: true });
 }
 
 document.getElementById('prevMonth').addEventListener('click', () => { calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth()-1, 1); render(); });

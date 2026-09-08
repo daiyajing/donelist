@@ -34,9 +34,7 @@
 <script src="common.js"></script>
 <script>
 document.getElementById('layout').innerHTML = renderNav('index');
-document.getElementById('tabbar').innerHTML = NAV_ITEMS.map(it =>
-  `<a class="tab-item ${it.id==='index'?'active':''}" href="${it.href}">${it.icon}<span>${it.label}</span></a>`
-).join('');
+document.getElementById('tabbar').innerHTML = renderTabbar('index');
 
 let todos = [], dones = [], habits = [];
 
@@ -48,21 +46,17 @@ async function load() {
 function render() {
   const now = new Date();
   document.getElementById('greet').textContent = greeting() + '，开始今天的工作吧';
-  document.getElementById('greetSub').textContent = `${now.getFullYear()}年${now.getMonth()+1}月${now.getDate()}日 · 周${['日','一','二','三','四','五','六'][now.getDay()]}`;
+  document.getElementById('greetSub').textContent = `${now.getFullYear()}年${now.getMonth()+1}月${now.getDate()}日 · 周${DOWS[(now.getDay()+6)%7]}`;
 
   const today = fmtDate(now);
   const todayDones = dones.filter(d => d.date === today);
-
   const ws = startOfWeek(now);
-  const weekDones = dones.filter(d => {
-    const dt = new Date(d.date);
-    return dt >= ws && dt < new Date(ws.getTime()+7*86400000);
-  });
+  const weekDones = dones.filter(d => { const dt = new Date(d.date); return dt >= ws && dt < new Date(ws.getTime()+7*86400000); });
   const weekMin = weekDones.reduce((s,d)=>s+durationMin(d.start_time,d.end_time), 0);
 
   document.getElementById('statWeekTime').innerHTML = `${(weekMin/60).toFixed(1)}<small>小时</small>`;
   document.getElementById('statWeekCount').innerHTML = `${weekDones.length}<small>条</small>`;
-  document.getElementById('statTodoTotal').innerHTML = `${todos.length}<small>项</small>`;
+  document.getElementById('statTodoTotal').innerHTML = `${todos.filter(t=>!t.is_folder).length}<small>项</small>`;
 
   const todayHabit = habits.filter(h => {
     const r = h.records.find(r => r.date === today);
@@ -71,26 +65,34 @@ function render() {
   document.getElementById('statHabitToday').innerHTML = `${todayHabit}<small>/${habits.length}</small>`;
 
   const tdList = document.getElementById('dashTodayDone');
-  if (todayDones.length === 0) {
-    tdList.innerHTML = '<div class="tree-empty">今天还没有记录</div>';
-  } else {
-    tdList.innerHTML = todayDones.map(d => {
-      const color = d.todo_id ? todoColor(todos, d.todo_id) : 'var(--module-3)';
-      return `<div class="mini-item"><span class="dot" style="background:${color}"></span><span class="txt">${esc(d.title)}</span><span class="time">${d.start_time}-${d.end_time}</span></div>`;
-    }).join('');
-  }
+  tdList.innerHTML = todayDones.length === 0
+    ? '<div class="tree-empty">今天还没有记录</div>'
+    : todayDones.map(d => {
+        const t = getTodo(todos, d.todo_id);
+        const color = t ? todoColor(todos, d.todo_id) : 'var(--module-3)';
+        return `<div class="mini-item" onclick="location.href='calendar.html'"><span class="dot" style="background:${color}"></span><span class="txt">${esc(d.title)}</span><span class="time">${d.start_time ? d.start_time+'-'+d.end_time : '无时间'}</span></div>`;
+      }).join('');
 
-  const ongoing = todos.filter(t => !t.done && !t.parent_id).slice(0, 6);
+  // Show todos that are not done, not folders, with deadline soon or importance high
+  const ongoing = todos.filter(t => !t.done && !t.is_folder).sort((a,b) => {
+    const da = a.deadline ? daysUntil(a.deadline) : 999;
+    const db = b.deadline ? daysUntil(b.deadline) : 999;
+    if (da !== db) return da - db;
+    return (b.importance||0) - (a.importance||0);
+  }).slice(0, 6);
   const ogList = document.getElementById('dashOngoing');
-  if (ongoing.length === 0) {
-    ogList.innerHTML = '<div class="tree-empty">暂无进行中的待办</div>';
-  } else {
-    ogList.innerHTML = ongoing.map(t => {
-      const mins = todoTime(todos, dones, t.id);
-      const cnt = todoDoneCount(todos, dones, t.id);
-      return `<div class="mini-item"><span class="dot" style="background:${todoColor(todos,t.id)}"></span><span class="txt">${esc(t.title)}</span><span class="time">${cnt}条 · ${fmtMin(mins)}</span></div>`;
-    }).join('');
-  }
+  ogList.innerHTML = ongoing.length === 0
+    ? '<div class="tree-empty">暂无进行中的待办</div>'
+    : ongoing.map(t => {
+        const mins = todoTime(todos, dones, t.id);
+        const cnt = todoDoneCount(todos, dones, t.id);
+        const dl = t.deadline ? daysUntil(t.deadline) : null;
+        return `<div class="mini-item" onclick="location.href='todos.html'">
+          ${t.importance > 0 ? `<span class="imp-dot" data-imp="${t.importance}"></span>` : `<span class="dot" style="background:${todoColor(todos,t.id)}"></span>`}
+          <span class="txt">${esc(t.title)}</span>
+          <span class="time">${dl !== null ? (dl < 0 ? '逾期' : dl === 0 ? '今天' : dl + '天') : (cnt + '条')}</span>
+        </div>`;
+      }).join('');
 }
 
 load();

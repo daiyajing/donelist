@@ -36,13 +36,10 @@
 <script src="common.js"></script>
 <script>
 document.getElementById('layout').innerHTML = renderNav('stats');
-document.getElementById('tabbar').innerHTML = NAV_ITEMS.map(it =>
-  `<a class="tab-item ${it.id==='stats'?'active':''}" href="${it.href}">${it.icon}<span>${it.label}</span></a>`
-).join('');
+document.getElementById('tabbar').innerHTML = renderTabbar('stats');
 
 let todos = [], dones = [];
 let statWeek = startOfWeek(new Date());
-const DOWS = ['一','二','三','四','五','六','日'];
 
 async function load() {
   [todos, dones] = await Promise.all([API.todos(), API.dones()]);
@@ -53,9 +50,7 @@ function render() {
   const ws = statWeek;
   const we = new Date(ws.getTime() + 7*86400000);
   document.getElementById('weekRange').textContent = `${ws.getMonth()+1}/${ws.getDate()} – ${we.getMonth()+1}/${we.getDate()}`;
-  const weekDones = dones.filter(d => {
-    const dt = new Date(d.date); return dt >= ws && dt < we;
-  });
+  const weekDones = dones.filter(d => { const dt = new Date(d.date); return dt >= ws && dt < we; });
   const weekMin = weekDones.reduce((s,d)=>s+durationMin(d.start_time,d.end_time),0);
   document.getElementById('weekTotal').textContent = (weekMin/60).toFixed(1);
   document.getElementById('weekCount').textContent = weekDones.length;
@@ -96,14 +91,14 @@ function render() {
         <span class="ts-time">${fmtMin(r.mins)}</span>
       </div>
       <div class="breakdown">
-        ${r.items.map(it => `<div class="bd-item"><span class="bd-date">${it.date} ${it.start_time}-${it.end_time}</span><span class="bd-time">${fmtMin(durationMin(it.start_time,it.end_time))}</span><div>${esc(it.title)}</div>${it.note?`<div class="bd-note">${esc(it.note)}</div>`:''}</div>`).join('')}
+        ${r.items.map(it => `<div class="bd-item"><span class="bd-date">${it.date} ${it.start_time ? it.start_time+'-'+it.end_time : '无时间'}</span><span class="bd-time">${fmtMin(durationMin(it.start_time,it.end_time))}</span><div>${esc(it.title)}</div>${it.note?`<div class="bd-note">${esc(it.note)}</div>`:''}</div>`).join('')}
       </div>
     `).join('');
 
   const orphans = (todoMap['__none'] || { items: [] }).items;
   document.getElementById('orphanStats').innerHTML = orphans.length === 0
     ? '<div class="tree-empty">无</div>'
-    : orphans.map(it => `<div class="bd-item"><span class="bd-date">${it.date} ${it.start_time}-${it.end_time}</span><span class="bd-time">${fmtMin(durationMin(it.start_time,it.end_time))}</span><div>${esc(it.title)}</div>${it.note?`<div class="bd-note">${esc(it.note)}</div>`:''}</div>`).join('');
+    : orphans.map(it => `<div class="bd-item"><span class="bd-date">${it.date} ${it.start_time ? it.start_time+'-'+it.end_time : '无时间'}</span><span class="bd-time">${fmtMin(durationMin(it.start_time,it.end_time))}</span><div>${esc(it.title)}</div>${it.note?`<div class="bd-note">${esc(it.note)}</div>`:''}</div>`).join('');
 }
 
 document.getElementById('prevWeek').addEventListener('click', () => { statWeek = new Date(statWeek.getTime()-7*86400000); render(); });
