@@ -7,9 +7,11 @@
 <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-<div class="layout" id="layout"></div>
-<nav class="tabbar" id="tabbar"></nav>
-<div class="main">
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main-wrap">
+    <div class="topbar" id="topbar"></div>
+    <div class="main">
   <div class="page-head">
     <div><h2>统计</h2><div class="sub">本周用时与待办进展汇总</div></div>
   </div>
@@ -32,10 +34,14 @@
       </div>
     </div>
   </div>
+    </div>
+  </div>
 </div>
+<nav class="tabbar" id="tabbar"></nav>
 <script src="common.js"></script>
 <script>
-document.getElementById('layout').innerHTML = renderNav('stats');
+document.getElementById('sidebar').innerHTML = renderSidebar('stats');
+document.getElementById('topbar').innerHTML = renderTopbar();
 document.getElementById('tabbar').innerHTML = renderTabbar('stats');
 
 let todos = [], dones = [];

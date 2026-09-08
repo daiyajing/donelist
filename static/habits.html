@@ -7,21 +7,25 @@
 <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-<div class="layout" id="layout"></div>
-<nav class="tabbar" id="tabbar"></nav>
-<div class="main">
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main-wrap">
+    <div class="topbar" id="topbar"></div>
+    <div class="main">
   <div class="page-head">
     <div><h2>习惯打卡</h2><div class="sub">锻炼、读书、喝水、睡眠等日常记录</div></div>
     <button class="btn primary" id="addHabit"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>添加习惯</button>
   </div>
   <div class="habit-grid" id="habitGrid"><div class="tree-empty">加载中...</div></div>
+    </div>
+  </div>
 </div>
+<nav class="tabbar" id="tabbar"></nav>
 <script src="common.js"></script>
 <script>
-document.getElementById('layout').innerHTML = renderNav('habits');
-document.getElementById('tabbar').innerHTML = NAV_ITEMS.map(it =>
-  `<a class="tab-item ${it.id==='habits'?'active':''}" href="${it.href}">${it.icon}<span>${it.label}</span></a>`
-).join('');
+document.getElementById('sidebar').innerHTML = renderSidebar('habits');
+document.getElementById('topbar').innerHTML = renderTopbar();
+document.getElementById('tabbar').innerHTML = renderTabbar('habits');
 
 let habits = [];
 

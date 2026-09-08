@@ -56,6 +56,7 @@ def init_db():
             deadline TEXT,
             importance INTEGER DEFAULT 0,
             is_folder INTEGER DEFAULT 0,
+            archived INTEGER DEFAULT 0,
             created_at TEXT
         );
         CREATE TABLE IF NOT EXISTS dones (
@@ -94,6 +95,8 @@ def init_db():
         db.execute("ALTER TABLE todos ADD COLUMN importance INTEGER DEFAULT 0")
     if "is_folder" not in cols:
         db.execute("ALTER TABLE todos ADD COLUMN is_folder INTEGER DEFAULT 0")
+    if "archived" not in cols:
+        db.execute("ALTER TABLE todos ADD COLUMN archived INTEGER DEFAULT 0")
     db.commit()
     db.close()
 
@@ -133,8 +136,8 @@ def create_todo():
     db = get_db()
     db.execute(
         """INSERT INTO todos
-           (id, title, parent_id, note, done, expanded, sort_order, deadline, importance, is_folder, created_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+           (id, title, parent_id, note, done, expanded, sort_order, deadline, importance, is_folder, archived, created_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             tid,
             data["title"],
@@ -146,6 +149,7 @@ def create_todo():
             data.get("deadline"),
             data.get("importance", 0),
             1 if data.get("is_folder") else 0,
+            1 if data.get("archived") else 0,
             datetime.now().isoformat(),
         ),
     )
@@ -159,11 +163,11 @@ def update_todo(tid):
     db = get_db()
     fields = []
     vals = []
-    for k in ("title", "parent_id", "note", "done", "expanded", "sort_order", "deadline", "importance", "is_folder"):
+    for k in ("title", "parent_id", "note", "done", "expanded", "sort_order", "deadline", "importance", "is_folder", "archived"):
         if k in data:
             fields.append(f"{k}=?")
             v = data[k]
-            if k in ("done", "expanded", "is_folder"):
+            if k in ("done", "expanded", "is_folder", "archived"):
                 v = 1 if v else 0
             vals.append(v)
     if fields:
@@ -344,7 +348,7 @@ def seed_if_empty():
     todos_seed = [
         ("t1", "完成首页原型", "f1", "参考竞品 A、B 的布局", 0, 0, nxt, 3),
         ("t2", "用户调研访谈", "f1", "", 1, 1, None, 2),
-        ("t3", "数据库表设计", "f2", "注意索引与分表", 0, 0, nxt2, 4),
+        ("t3", "数据库表设计", "f2", "注意索引与分表", 0, 0, nxt2, 3),
     ]
     for tid, title, pid, note, done, so, dl, imp in todos_seed:
         db.execute(

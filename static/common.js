@@ -1,5 +1,5 @@
 /* ============================================================
-   个人工作台 · 共享脚本 v2（API + 工具 + 导航 + 拖拽）
+   个人工作台 · 共享脚本 v3
    ============================================================ */
 const API = {
   todos: () => fetch('/api/todos').then(r => r.json()),
@@ -54,6 +54,19 @@ function greeting() {
 }
 const DOWS = ['一','二','三','四','五','六','日'];
 
+/* ---------- Importance (0-3, exclamation marks) ---------- */
+const IMP_INFO = {
+  0: { label: '无', icon: '', desc: '不重要不紧急' },
+  1: { label: '低', icon: '!', desc: '不重要但紧急' },
+  2: { label: '中', icon: '!!', desc: '重要不紧急' },
+  3: { label: '高', icon: '!!!', desc: '重要紧急' },
+};
+function impHtml(imp) {
+  if (!imp) return '';
+  const info = IMP_INFO[imp];
+  return `<span class="imp-icon imp-${imp}" title="${info.label}优先级 · ${info.desc}">${info.icon}</span>`;
+}
+
 /* ---------- Tree helpers ---------- */
 function getChildren(todos, pid) { return todos.filter(t => t.parent_id === pid).sort((a,b)=>a.sort_order-b.sort_order); }
 function getTodo(todos, id) { return todos.find(t => t.id === id); }
@@ -88,11 +101,6 @@ function todoDones(todos, dones, id) {
   }
   return result.sort((a,b) => (b.date + b.start_time).localeCompare(a.date + a.start_time));
 }
-function ancestorDepth(todos, id) {
-  let d = 0, t = getTodo(todos, id);
-  while (t && t.parent_id) { d++; t = getTodo(todos, t.parent_id); }
-  return d;
-}
 function getRootParent(todos, id) {
   let t = getTodo(todos, id);
   while (t && t.parent_id) t = getTodo(todos, t.parent_id);
@@ -124,7 +132,6 @@ function todoColor(todos, id) {
   const idx = roots.findIndex(t => t.id === root.id);
   return TODO_COLORS[idx % TODO_COLORS.length];
 }
-const IMP_LABELS = ['','低','中','高','紧急'];
 
 /* ---------- Toast & Modal ---------- */
 function toast(msg) {
@@ -140,7 +147,7 @@ function openModal(title, bodyHtml, onConfirm, opts = {}) {
     document.body.appendChild(mask);
     mask.addEventListener('click', e => { if (e.target.id === 'modalMask') closeModal(); });
   }
-  const footHtml = opts.hideFoot ? '' : `<div class="modal-foot" id="modalFoot"><button class="btn" id="modalCancel">取消</button><button class="btn primary" id="modalOk">确定</button></div>`;
+  const footHtml = opts.hideFoot ? '' : `<div class="modal-foot"><button class="btn" id="modalCancel">取消</button><button class="btn primary" id="modalOk">确定</button></div>`;
   mask.innerHTML = `<div class="modal"><h3 id="modalTitle"></h3><div id="modalBody"></div>${footHtml}</div>`;
   document.getElementById('modalTitle').textContent = title;
   document.getElementById('modalBody').innerHTML = bodyHtml;
@@ -155,7 +162,7 @@ function openModal(title, bodyHtml, onConfirm, opts = {}) {
 function closeModal() { document.getElementById('modalMask')?.classList.remove('show'); }
 function esc(s) { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
 
-/* ---------- Navigation (shared) ---------- */
+/* ---------- Navigation ---------- */
 const NAV_ITEMS = [
   { id: 'index', label: '首页', href: 'index.html', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>' },
   { id: 'todos', label: '待办', href: 'todos.html', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v6l-5 9a2 2 0 0 0 2 3h12a2 2 0 0 0 2-3l-5-9V3"/><path d="M9 3h6"/></svg>' },
@@ -163,11 +170,18 @@ const NAV_ITEMS = [
   { id: 'stats', label: '统计', href: 'stats.html', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="8" width="3" height="10"/><rect x="17" y="5" width="3" height="13"/></svg>' },
   { id: 'habits', label: '习惯', href: 'habits.html', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>' },
 ];
-function renderNav(activeId) {
-  const dateStr = (() => { const d = new Date(); return `${d.getMonth()+1}月${d.getDate()}日 周${DOWS[(d.getDay()+6)%7]}`; })();
-  const sidebarItems = NAV_ITEMS.map(it => `<a class="nav-item ${it.id===activeId?'active':''}" href="${it.href}">${it.icon}${it.label}</a>`).join('');
-  return `<aside class="sidebar"><div class="brand"><h1>我的工作台</h1><p>${dateStr}</p></div><nav class="nav">${sidebarItems}</nav></aside><div class="main-wrap"><div class="topbar"><h1>我的工作台</h1><span class="date">${dateStr}</span></div>`;
+function getDateStr() {
+  const d = new Date();
+  return `${d.getMonth()+1}月${d.getDate()}日 周${DOWS[(d.getDay()+6)%7]}`;
+}
+function renderSidebar(activeId) {
+  const dateStr = getDateStr();
+  const items = NAV_ITEMS.map(it => `<a class="nav-item ${it.id===activeId?'active':''}" href="${it.href}">${it.icon}${it.label}</a>`).join('');
+  return `<div class="brand"><h1>我的工作台</h1><p>${dateStr}</p></div><nav class="nav">${items}</nav>`;
+}
+function renderTopbar() {
+  return `<h1>我的工作台</h1><span class="date">${getDateStr()}</span>`;
 }
 function renderTabbar(activeId) {
-  return `<nav class="tabbar">${NAV_ITEMS.map(it => `<a class="tab-item ${it.id===activeId?'active':''}" href="${it.href}">${it.icon}<span>${it.label}</span></a>`).join('')}</nav>`;
+  return NAV_ITEMS.map(it => `<a class="tab-item ${it.id===activeId?'active':''}" href="${it.href}">${it.icon}<span>${it.label}</span></a>`).join('');
 }

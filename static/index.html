@@ -7,9 +7,11 @@
 <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-<div class="layout" id="layout"></div>
-<nav class="tabbar" id="tabbar"></nav>
-<div class="main">
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main-wrap">
+    <div class="topbar" id="topbar"></div>
+    <div class="main">
   <div class="greet">
     <h2 id="greet">你好</h2>
     <p id="greetSub">—</p>
@@ -30,10 +32,14 @@
       <div class="mini-list" id="dashOngoing"><div class="tree-empty">加载中...</div></div>
     </div>
   </div>
+    </div>
+  </div>
 </div>
+<nav class="tabbar" id="tabbar"></nav>
 <script src="common.js"></script>
 <script>
-document.getElementById('layout').innerHTML = renderNav('index');
+document.getElementById('sidebar').innerHTML = renderSidebar('index');
+document.getElementById('topbar').innerHTML = renderTopbar();
 document.getElementById('tabbar').innerHTML = renderTabbar('index');
 
 let todos = [], dones = [], habits = [];
@@ -88,7 +94,7 @@ function render() {
         const cnt = todoDoneCount(todos, dones, t.id);
         const dl = t.deadline ? daysUntil(t.deadline) : null;
         return `<div class="mini-item" onclick="location.href='todos.html'">
-          ${t.importance > 0 ? `<span class="imp-dot" data-imp="${t.importance}"></span>` : `<span class="dot" style="background:${todoColor(todos,t.id)}"></span>`}
+          ${t.importance > 0 ? impHtml(t.importance) : `<span class="dot" style="background:${todoColor(todos,t.id)}"></span>`}
           <span class="txt">${esc(t.title)}</span>
           <span class="time">${dl !== null ? (dl < 0 ? '逾期' : dl === 0 ? '今天' : dl + '天') : (cnt + '条')}</span>
         </div>`;

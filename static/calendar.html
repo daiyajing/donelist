@@ -7,9 +7,11 @@
 <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-<div class="layout" id="layout"></div>
-<nav class="tabbar" id="tabbar"></nav>
-<div class="main">
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main-wrap">
+    <div class="topbar" id="topbar"></div>
+    <div class="main">
   <div class="page-head">
     <div><h2>日历</h2><div class="sub">点击日期添加已办，可拖拽调整日期</div></div>
   </div>
@@ -23,10 +25,14 @@
     <div class="cal-grid" id="calGrid"></div>
     <div class="cal-legend" id="calLegend"></div>
   </div>
+    </div>
+  </div>
 </div>
+<nav class="tabbar" id="tabbar"></nav>
 <script src="common.js"></script>
 <script>
-document.getElementById('layout').innerHTML = renderNav('calendar');
+document.getElementById('sidebar').innerHTML = renderSidebar('calendar');
+document.getElementById('topbar').innerHTML = renderTopbar();
 document.getElementById('tabbar').innerHTML = renderTabbar('calendar');
 
 let todos = [], dones = [];
