@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>首页 · 我的工作台</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main-wrap">
+    <div class="topbar" id="topbar"></div>
+    <div class="main">
+  <div class="greet">
+    <h2 id="greet">你好</h2>
+    <p id="greetSub">—</p>
+  </div>
+  <div class="stat-grid">
+    <div class="card stat-card"><div class="label">本周已办总时长</div><div class="val" id="statWeekTime">0<small>小时</small></div></div>
+    <div class="card stat-card"><div class="label">本周已办条目</div><div class="val" id="statWeekCount">0<small>条</small></div></div>
+    <div class="card stat-card"><div class="label">待办总数</div><div class="val" id="statTodoTotal">0<small>项</small></div></div>
+    <div class="card stat-card"><div class="label">今日习惯</div><div class="val" id="statHabitToday">0<small>/0</small></div></div>
+  </div>
+  <div class="dash-row">
+    <div class="dash-col">
+      <h3>今日已办</h3>
+      <div class="mini-list" id="dashTodayDone"><div class="tree-empty">加载中...</div></div>
+    </div>
+    <div class="dash-col">
+      <h3>进行中的待办</h3>
+      <div class="mini-list" id="dashOngoing"><div class="tree-empty">加载中...</div></div>
+    </div>
+  </div>
+    </div>
+  </div>
+</div>
+<nav class="tabbar" id="tabbar"></nav>
+<script src="common.js"></script>
+<script>
+document.getElementById('sidebar').innerHTML = renderSidebar('index');
+document.getElementById('topbar').innerHTML = renderTopbar();
+document.getElementById('tabbar').innerHTML = renderTabbar('index');
+
+let todos = [], dones = [], habits = [];
+
+async function load() {
+  [todos, dones, habits] = await Promise.all([API.todos(), API.dones(), API.habits()]);
+  render();
+}
+
+function render() {
+  const now = new Date();
+  document.getElementById('greet').textContent = greeting() + '，开始今天的工作吧';
+  document.getElementById('greetSub').textContent = `${now.getFullYear()}年${now.getMonth()+1}月${now.getDate()}日 · 周${DOWS[(now.getDay()+6)%7]}`;
+
+  const today = fmtDate(now);
+  const todayDones = dones.filter(d => d.date === today);
+  const ws = startOfWeek(now);
+  const weekDones = dones.filter(d => { const dt = new Date(d.date); return dt >= ws && dt < new Date(ws.getTime()+7*86400000); });
+  const weekMin = weekDones.reduce((s,d)=>s+durationMin(d.start_time,d.end_time), 0);
+
+  document.getElementById('statWeekTime').innerHTML = `${(weekMin/60).toFixed(1)}<small>小时</small>`;
+  document.getElementById('statWeekCount').innerHTML = `${weekDones.length}<small>条</small>`;
+  document.getElementById('statTodoTotal').innerHTML = `${todos.filter(t=>!t.is_folder).length}<small>项</small>`;
+
+  const todayHabit = habits.filter(h => {
+    const r = h.records.find(r => r.date === today);
+    return r && (h.type === 'check' ? r.value : r.value > 0);
+  }).length;
+  document.getElementById('statHabitToday').innerHTML = `${todayHabit}<small>/${habits.length}</small>`;
+
+  const tdList = document.getElementById('dashTodayDone');
+  tdList.innerHTML = todayDones.length === 0
+    ? '<div class="tree-empty">今天还没有记录</div>'
+    : todayDones.map(d => {
+        const t = getTodo(todos, d.todo_id);
+        const color = t ? todoColor(todos, d.todo_id) : 'var(--module-3)';
+        return `<div class="mini-item" onclick="location.href='calendar.html'"><span class="dot" style="background:${color}"></span><span class="txt">${esc(d.title)}</span><span class="time">${d.start_time ? d.start_time+'-'+d.end_time : '无时间'}</span></div>`;
+      }).join('');
+
+  // Show todos that are not done, not folders, with deadline soon or importance high
+  const ongoing = todos.filter(t => !t.done && !t.is_folder).sort((a,b) => {
+    const da = a.deadline ? daysUntil(a.deadline) : 999;
+    const db = b.deadline ? daysUntil(b.deadline) : 999;
+    if (da !== db) return da - db;
+    return (b.importance||0) - (a.importance||0);
+  }).slice(0, 6);
+  const ogList = document.getElementById('dashOngoing');
+  ogList.innerHTML = ongoing.length === 0
+    ? '<div class="tree-empty">暂无进行中的待办</div>'
+    : ongoing.map(t => {
+        const mins = todoTime(todos, dones, t.id);
+        const cnt = todoDoneCount(todos, dones, t.id);
+        const dl = t.deadline ? fmtDeadline(t.deadline) : null;
+        return `<div class="mini-item" onclick="location.href='todos.html'">
+          ${t.importance > 0 ? impHtml(t.importance) : `<span class="dot" style="background:${todoColor(todos,t.id)}"></span>`}
+          <span class="txt">${esc(t.title)}</span>
+          <span class="time">${dl ? dl.text : (cnt + '条')}</span>
+        </div>`;
+      }).join('');
+}
+
+load();
+</script>
+</body>
+</html>
