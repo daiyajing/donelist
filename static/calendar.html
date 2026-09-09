@@ -72,7 +72,9 @@ function render() {
       const t = getTodo(todos, d.todo_id);
       const color = t ? todoColor(todos, d.todo_id) : 'var(--module-3)';
       const noTime = !d.start_time;
-      return `<div class="cal-block ${noTime?'no-time':''}" draggable="true" data-done-id="${d.id}" style="border-left-color:${color}">${d.start_time ? d.start_time + ' ' : ''}${esc(d.title)}</div>`;
+      // Display: 关联待办/事项名称 或 事项名称
+      const displayText = t ? `${t.title}/${d.title}` : d.title;
+      return `<div class="cal-block ${noTime?'no-time':''}" draggable="true" data-done-id="${d.id}" style="border-left-color:${color}">${d.start_time ? d.start_time + ' ' : ''}${esc(displayText)}</div>`;
     }).join('');
     const more = dayDones.length > 3 ? `<div class="cal-block more" data-more-date="${c.date}">+${dayDones.length-3} 更多</div>` : '';
     return `<div class="cal-cell ${c.other?'other':''} ${c.date===today?'today':''}" data-date="${c.date}">
@@ -149,20 +151,24 @@ function bindCalendarDnD() {
   });
 }
 
-/* ---------- Add done with autocomplete ---------- */
+/* ---------- Add done with separate name + assoc todo ---------- */
 function openAddDone(date) {
   const html = `
     <div class="field">
-      <label>关联待办</label>
+      <label>事项名称</label>
+      <input type="text" id="dTitle" placeholder="做了什么..." autocomplete="off">
+    </div>
+    <div class="field">
+      <label>关联待办（可选）</label>
       <div class="ac-wrap">
         <input type="text" id="acInput" placeholder="输入关键词搜索待办..." autocomplete="off">
         <div class="ac-list" id="acList"></div>
       </div>
     </div>
     <div class="field">
-      <label><input type="checkbox" id="noTime" style="width:auto;display:inline-block;margin-right:6px;">无具体时间段（只记日期）</label>
+      <label><input type="checkbox" id="hasTime" style="width:auto;display:inline-block;margin-right:6px;">有时间段</label>
     </div>
-    <div id="timeFields" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+    <div id="timeFields" style="display:none;grid-template-columns:1fr 1fr;gap:12px;">
       <div class="field"><label>开始</label><input type="time" id="dStart" value="09:00"></div>
       <div class="field"><label>结束</label><input type="time" id="dEnd" value="10:00"></div>
     </div>
@@ -170,36 +176,32 @@ function openAddDone(date) {
     <div class="field"><label>备注 / 想法</label><textarea id="dNote" placeholder="记录想法、进展、收获..."></textarea></div>
   `;
   openModal('添加已办 · ' + fmtDateShort(date), html, async () => {
-    const input = document.getElementById('acInput');
-    const selectedTodoId = input.dataset.todoId;
-    if (!selectedTodoId) { toast('请选择或创建一个待办'); return; }
-    const noTime = document.getElementById('noTime').checked;
-    const t = getTodo(todos, selectedTodoId);
+    const title = document.getElementById('dTitle').value.trim();
+    if (!title) { toast('请填写事项名称'); return; }
+    const acInput = document.getElementById('acInput');
+    const todoId = acInput.dataset.todoId || null;
+    const hasTime = document.getElementById('hasTime').checked;
     const d = {
-      title: t ? t.title : input.value.trim(),
-      todo_id: selectedTodoId,
+      title,
+      todo_id: todoId,
       date: document.getElementById('dDate').value,
-      start_time: noTime ? '' : document.getElementById('dStart').value,
-      end_time: noTime ? '' : document.getElementById('dEnd').value,
+      start_time: hasTime ? document.getElementById('dStart').value : '',
+      end_time: hasTime ? document.getElementById('dEnd').value : '',
       note: document.getElementById('dNote').value.trim()
     };
     const res = await API.createDone(d);
     d.id = res.id; dones.push(d);
     closeModal(); render(); toast('已添加');
   });
-  setupAutocomplete(date);
+  setupAutocomplete();
+  document.getElementById('hasTime').addEventListener('change', () => {
+    document.getElementById('timeFields').style.display = document.getElementById('hasTime').checked ? 'grid' : 'none';
+  });
 }
 
-function setupAutocomplete(date) {
+function setupAutocomplete() {
   const input = document.getElementById('acInput');
   const list = document.getElementById('acList');
-  const noTimeCb = document.getElementById('noTime');
-  const timeFields = document.getElementById('timeFields');
-
-  noTimeCb.addEventListener('change', () => {
-    timeFields.style.display = noTimeCb.checked ? 'none' : 'grid';
-  });
-
   let highlightIdx = -1;
   let currentMatches = [];
 
@@ -240,18 +242,16 @@ function setupAutocomplete(date) {
   }
 
   async function handleCreateTodo(title) {
-    // Find or create 收集箱 folder
     let inbox = todos.find(t => t.is_folder && t.title === '收集箱' && !t.parent_id);
     if (!inbox) {
       const so = getChildren(todos, null).length;
       const res = await API.createTodo({ title: '收集箱', parent_id: null, sort_order: so, is_folder: 1 });
-      inbox = { id: res.id, title: '收集箱', parent_id: null, is_folder: 1, sort_order: so, expanded: true, done: 0, note: '', deadline: null, importance: 0 };
+      inbox = { id: res.id, title: '收集箱', parent_id: null, is_folder: 1, sort_order: so, expanded: true, done: 0, note: '', deadline: null, importance: 0, archived: 0 };
       todos.push(inbox);
     }
-    // Create todo in inbox
     const so = getChildren(todos, inbox.id).length;
     const res = await API.createTodo({ title, parent_id: inbox.id, sort_order: so, is_folder: 0, importance: 0 });
-    const newTodo = { id: res.id, title, parent_id: inbox.id, is_folder: 0, sort_order: so, expanded: true, done: 0, note: '', deadline: null, importance: 0 };
+    const newTodo = { id: res.id, title, parent_id: inbox.id, is_folder: 0, sort_order: so, expanded: true, done: 0, note: '', deadline: null, importance: 0, archived: 0 };
     todos.push(newTodo);
     inbox.expanded = true;
     API.updateTodo(inbox.id, { expanded: true });
@@ -292,12 +292,18 @@ function openEditDone(doneId) {
   const d = dones.find(x => x.id === doneId);
   if (!d) return;
   const t = getTodo(todos, d.todo_id);
-  const folderPath = t ? getFolderPath(todos, t.id) : [];
-  const noTime = !d.start_time;
+  const hasTime = !!d.start_time;
   const html = `
-    <div class="field"><label>关联待办</label><div style="padding:10px 12px;background:var(--surface-nested);border-radius:var(--radius-tile);font-weight:600;">${esc(t?.title || '未关联')} ${folderPath.length?`<span style="font-weight:400;color:var(--text-tertiary);font-size:12px;">${esc(folderPath.join(' › '))}</span>`:''}</div></div>
-    <div class="field"><label><input type="checkbox" id="noTime" style="width:auto;display:inline-block;margin-right:6px;" ${noTime?'checked':''}>无具体时间段</label></div>
-    <div id="timeFields" style="display:${noTime?'none':'grid'};grid-template-columns:1fr 1fr;gap:12px;">
+    <div class="field"><label>事项名称</label><input type="text" id="dTitle" value="${esc(d.title)}" placeholder="做了什么..."></div>
+    <div class="field">
+      <label>关联待办（可选）</label>
+      <div class="ac-wrap">
+        <input type="text" id="acInput" value="${esc(t?.title || '')}" data-todo-id="${d.todo_id || ''}" placeholder="输入关键词搜索待办..." autocomplete="off">
+        <div class="ac-list" id="acList"></div>
+      </div>
+    </div>
+    <div class="field"><label><input type="checkbox" id="hasTime" style="width:auto;display:inline-block;margin-right:6px;" ${hasTime?'checked':''}>有时间段</label></div>
+    <div id="timeFields" style="display:${hasTime?'grid':'none'};grid-template-columns:1fr 1fr;gap:12px;">
       <div class="field"><label>开始</label><input type="time" id="dStart" value="${d.start_time||'09:00'}"></div>
       <div class="field"><label>结束</label><input type="time" id="dEnd" value="${d.end_time||'10:00'}"></div>
     </div>
@@ -305,19 +311,26 @@ function openEditDone(doneId) {
     <div class="field"><label>备注 / 想法</label><textarea id="dNote" placeholder="记录想法、进展、收获...">${esc(d.note||'')}</textarea></div>
   `;
   openModal('编辑已办', html, async () => {
-    const noTime = document.getElementById('noTime').checked;
+    const title = document.getElementById('dTitle').value.trim();
+    if (!title) { toast('请填写事项名称'); return; }
+    const acInput = document.getElementById('acInput');
+    const todoId = acInput.dataset.todoId || null;
+    const hasTime = document.getElementById('hasTime').checked;
     const updates = {
+      title,
+      todo_id: todoId,
       date: document.getElementById('dDate').value,
-      start_time: noTime ? '' : document.getElementById('dStart').value,
-      end_time: noTime ? '' : document.getElementById('dEnd').value,
+      start_time: hasTime ? document.getElementById('dStart').value : '',
+      end_time: hasTime ? document.getElementById('dEnd').value : '',
       note: document.getElementById('dNote').value.trim()
     };
     Object.assign(d, updates);
     await API.updateDone(d.id, updates);
     closeModal(); render(); toast('已更新');
   });
-  document.getElementById('noTime').addEventListener('change', () => {
-    document.getElementById('timeFields').style.display = document.getElementById('noTime').checked ? 'none' : 'grid';
+  setupAutocomplete();
+  document.getElementById('hasTime').addEventListener('change', () => {
+    document.getElementById('timeFields').style.display = document.getElementById('hasTime').checked ? 'grid' : 'none';
   });
 }
 
@@ -326,10 +339,11 @@ function openDayList(date) {
   const html = dayDones.map(d => {
     const t = getTodo(todos, d.todo_id);
     const color = t ? todoColor(todos, d.todo_id) : 'var(--module-3)';
+    const displayText = t ? `${t.title}/${d.title}` : d.title;
     return `<div class="day-rec" style="display:flex;gap:10px;padding:10px;border-radius:var(--radius-tile);background:var(--surface-nested);margin-bottom:8px;cursor:pointer;" onclick="openEditDone('${d.id}')">
       <div style="width:4px;border-radius:4px;background:${color};flex-shrink:0;"></div>
       <div style="flex:1;">
-        <div style="font-weight:700;">${esc(d.title)}</div>
+        <div style="font-weight:700;">${esc(displayText)}</div>
         <div style="font-size:12px;color:var(--text-secondary);">${d.start_time ? d.start_time+'–'+d.end_time : '无具体时间'}</div>
         ${d.note?`<div style="font-size:12.5px;color:var(--text-secondary);margin-top:4px;">${esc(d.note)}</div>`:''}
       </div>

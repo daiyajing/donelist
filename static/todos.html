@@ -19,21 +19,14 @@
         <div class="todo-tree-col">
           <div class="todo-toolbar">
             <button class="btn primary" id="addTodo"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>添加待办</button>
-            <button class="btn" id="addFolder">📁 文件夹</button>
-            <button class="btn ghost" id="expandAll">展开</button>
-            <button class="btn ghost" id="collapseAll">收起</button>
+            <button class="btn" id="addFolder"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>添加项目</button>
           </div>
           <div class="card tree-container" id="treeContainer">
             <div class="tree-empty">加载中...</div>
           </div>
         </div>
         <div class="todo-detail-col" id="detailCol">
-          <div class="detail-panel" id="detailPanel">
-            <div class="detail-empty">
-              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
-              <div>单击待办查看详情</div>
-            </div>
-          </div>
+          <div class="detail-panel" id="detailPanel" style="display:none;"></div>
         </div>
       </div>
     </div>
@@ -48,7 +41,6 @@ document.getElementById('tabbar').innerHTML = renderTabbar('todos');
 
 let todos = [], dones = [];
 let selectedId = null;
-let showArchived = false;
 
 async function load() {
   [todos, dones] = await Promise.all([API.todos(), API.dones()]);
@@ -58,10 +50,11 @@ async function load() {
 /* ---------- Tree rendering ---------- */
 function render() {
   const container = document.getElementById('treeContainer');
-  const visible = showArchived ? todos : todos.filter(t => !t.archived);
+  const visible = todos.filter(t => !t.archived);
   const roots = visible.filter(t => !t.parent_id).sort((a,b)=>a.sort_order-b.sort_order);
   if (roots.length === 0) {
-    container.innerHTML = '<div class="tree-empty">还没有项目，点击「添加待办」开始</div>';
+    container.innerHTML = '<div class="tree-empty">还没有项目，点击「添加待办」或「添加项目」开始</div>';
+    renderDetail();
     return;
   }
   container.innerHTML = roots.map(t => renderNode(t, visible)).join('');
@@ -73,19 +66,18 @@ function renderNode(t, visible) {
   const children = visible.filter(x => x.parent_id === t.id).sort((a,b)=>a.sort_order-b.sort_order);
   const hasChild = children.length > 0;
   const isFolder = t.is_folder;
+  const color = todoColor(todos, t.id);
 
   const caret = hasChild
     ? `<span class="caret has-child ${t.expanded?'open':''}" data-act="toggle" data-id="${t.id}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></span>`
     : `<span class="caret"></span>`;
   const dragH = `<span class="drag-handle" data-id="${t.id}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="18" r="1"/></svg></span>`;
   const cb = isFolder ? '' : `<span class="cb ${t.done?'checked':''}" data-act="done" data-id="${t.id}">${t.done?'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>':''}</span>`;
-  const icon = isFolder ? `<span class="folder-icon">${hasChild && t.expanded ? '📂' : '📁'}</span>` : '';
+  const icon = isFolder ? `<span class="folder-icon" style="color:${color}">${hasChild && t.expanded ? '📂' : '📁'}</span>` : `<span class="todo-color-dot" style="background:${color}"></span>`;
   const imp = (!isFolder && t.importance > 0) ? impHtml(t.importance) : '';
   const dl = (!isFolder && t.deadline) ? (() => {
-    const d = daysUntil(t.deadline);
-    const cls = d < 0 ? 'overdue' : d === 0 ? 'today' : '';
-    const txt = d < 0 ? '逾期' : d === 0 ? '今天' : d + '天';
-    return `<span class="t-deadline ${cls}">${txt}</span>`;
+    const info = fmtDeadline(t.deadline);
+    return `<span class="t-deadline ${info.cls}">${info.text}</span>`;
   })() : '';
 
   return `
@@ -104,12 +96,11 @@ function renderNode(t, visible) {
           </div>
         </span>
       </div>
-      ${hasChild && t.expanded ? `<div class="tree-children">${children.map(c=>renderNode(c, visible)).join('')}</div>` : ''}
+      ${hasChild && t.expanded ? `<div class="tree-children" style="border-left-color:${color}33">${children.map(c=>renderNode(c, visible)).join('')}</div>` : ''}
     </div>`;
 }
 
 /* ---------- Event delegation ---------- */
-let clickTimer = null;
 function bindTreeEvents() {
   const container = document.getElementById('treeContainer');
 
@@ -139,20 +130,11 @@ function bindTreeEvents() {
     // Close any open menus
     document.querySelectorAll('.menu-dropdown.show').forEach(d => d.classList.remove('show'));
 
-    // Title click: single vs double
+    // Title: single click = select, double click = edit
     const titleEl = e.target.closest('[data-act="title"]');
     if (titleEl) {
       e.stopPropagation();
-      const id = titleEl.dataset.id;
-      if (clickTimer) {
-        clearTimeout(clickTimer); clickTimer = null;
-        startRename(titleEl, id);
-      } else {
-        clickTimer = setTimeout(() => {
-          clickTimer = null;
-          selectNode(id);
-        }, 250);
-      }
+      selectNode(titleEl.dataset.id);
       return;
     }
     // Other actions
@@ -162,6 +144,15 @@ function bindTreeEvents() {
     const id = el.dataset.id, act = el.dataset.act;
     if (act === 'toggle') toggleExpand(id);
     else if (act === 'done') toggleDone(id);
+  };
+
+  // Double-click on title = rename
+  container.ondblclick = (e) => {
+    const titleEl = e.target.closest('[data-act="title"]');
+    if (titleEl) {
+      e.stopPropagation();
+      startRename(titleEl, titleEl.dataset.id);
+    }
   };
 
   // DnD
@@ -303,9 +294,10 @@ function addDoneForTodo(todoId) {
   if (!t) return;
   const today = fmtDate(new Date());
   const html = `
+    <div class="field"><label>事项名称</label><input type="text" id="dTitle" value="${esc(t.title)}" placeholder="做了什么..."></div>
     <div class="field"><label>关联待办</label><div style="padding:10px 12px;background:var(--surface-nested);border-radius:var(--radius-tile);font-weight:600;">${esc(t.title)}</div></div>
-    <div class="field"><label><input type="checkbox" id="noTime" style="width:auto;display:inline-block;margin-right:6px;">无具体时间段（只记日期）</label></div>
-    <div id="timeFields" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+    <div class="field"><label><input type="checkbox" id="noTime" style="width:auto;display:inline-block;margin-right:6px;">有时间段</label></div>
+    <div id="timeFields" style="display:none;grid-template-columns:1fr 1fr;gap:12px;">
       <div class="field"><label>开始</label><input type="time" id="dStart" value="09:00"></div>
       <div class="field"><label>结束</label><input type="time" id="dEnd" value="10:00"></div>
     </div>
@@ -313,13 +305,15 @@ function addDoneForTodo(todoId) {
     <div class="field"><label>备注 / 想法</label><textarea id="dNote" placeholder="记录想法、进展、收获..."></textarea></div>
   `;
   openModal('添加已办', html, async () => {
-    const noTime = document.getElementById('noTime').checked;
+    const title = document.getElementById('dTitle').value.trim();
+    if (!title) { toast('请填写事项名称'); return; }
+    const hasTime = document.getElementById('noTime').checked;
     const d = {
-      title: t.title,
+      title,
       todo_id: todoId,
       date: document.getElementById('dDate').value,
-      start_time: noTime ? '' : document.getElementById('dStart').value,
-      end_time: noTime ? '' : document.getElementById('dEnd').value,
+      start_time: hasTime ? document.getElementById('dStart').value : '',
+      end_time: hasTime ? document.getElementById('dEnd').value : '',
       note: document.getElementById('dNote').value.trim()
     };
     const res = await API.createDone(d);
@@ -327,7 +321,7 @@ function addDoneForTodo(todoId) {
     closeModal(); render(); toast('已添加已办');
   });
   document.getElementById('noTime').addEventListener('change', () => {
-    document.getElementById('timeFields').style.display = document.getElementById('noTime').checked ? 'none' : 'grid';
+    document.getElementById('timeFields').style.display = document.getElementById('noTime').checked ? 'grid' : 'none';
   });
 }
 
@@ -335,11 +329,12 @@ function addDoneForTodo(todoId) {
 function renderDetail() {
   const panel = document.getElementById('detailPanel');
   if (!selectedId) {
-    panel.innerHTML = `<div class="detail-empty"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg><div>单击待办查看详情</div></div>`;
+    panel.style.display = 'none';
     return;
   }
   const t = getTodo(todos, selectedId);
   if (!t) { selectedId = null; renderDetail(); return; }
+  panel.style.display = '';
   const td = todoDones(todos, dones, selectedId);
   const totalMin = td.reduce((s,d) => s + durationMin(d.start_time, d.end_time), 0);
   const isMobile = window.innerWidth < 900;
@@ -363,11 +358,12 @@ function getDetailHtml(t, td, totalMin) {
           ${d.note ? `<div class="ti-note">${esc(d.note)}</div>` : ''}
         </div>
       </div>`).join('');
+  const cbHtml = t.is_folder ? '' : `<span class="cb ${t.done?'checked':''}" data-act="detail-done">${t.done?'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>':''}</span>`;
   return `
     <div class="detail-head">
       <div class="dh-top">
-        <span class="folder-icon">${t.is_folder ? '📁' : '✅'}</span>
-        <span class="dh-title">${esc(t.title)}</span>
+        ${cbHtml}
+        <span class="dh-title" data-act="detail-title" contenteditable="true">${esc(t.title)}</span>
       </div>
     </div>
     <div class="detail-body">
@@ -392,7 +388,36 @@ function getDetailHtml(t, td, totalMin) {
 }
 function bindDetailEvents(t) {
   const scope = document.getElementById('modalMask')?.classList.contains('show') ? document.getElementById('modalBody') : document.getElementById('detailPanel');
-  scope.querySelectorAll('[data-act="imp"]')?.forEach(btn => {
+
+  // Editable title
+  const titleEl = scope.querySelector('[data-act="detail-title"]');
+  if (titleEl) {
+    titleEl.addEventListener('blur', async () => {
+      const txt = titleEl.textContent.trim();
+      if (txt && txt !== t.title) {
+        t.title = txt;
+        API.updateTodo(t.id, { title: txt });
+        render();
+      }
+    });
+    titleEl.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); titleEl.blur(); }
+      if (e.key === 'Escape') { titleEl.textContent = t.title; titleEl.blur(); }
+    });
+  }
+
+  // Done checkbox in detail
+  const doneCb = scope.querySelector('[data-act="detail-done"]');
+  if (doneCb) {
+    doneCb.onclick = async () => {
+      t.done = !t.done;
+      API.updateTodo(t.id, { done: t.done });
+      render();
+    };
+  }
+
+  // Importance buttons
+  scope.querySelectorAll('[data-act="imp"]').forEach(btn => {
     btn.onclick = async () => {
       const imp = parseInt(btn.dataset.imp);
       t.importance = t.importance === imp ? 0 : imp;
@@ -400,8 +425,12 @@ function bindDetailEvents(t) {
       render();
     };
   });
+
+  // Deadline
   const dl = scope.querySelector('#detailDeadline');
   if (dl) dl.onchange = async () => { t.deadline = dl.value || null; API.updateTodo(t.id, { deadline: t.deadline }); render(); };
+
+  // Note
   const note = scope.querySelector('#detailNote');
   if (note) note.onblur = async () => { t.note = note.value; API.updateTodo(t.id, { note: t.note }); };
 }
@@ -429,7 +458,7 @@ async function addTodoToInbox() {
 document.getElementById('addTodo').addEventListener('click', addTodoToInbox);
 document.getElementById('addFolder').addEventListener('click', async () => {
   const so = getChildren(todos, null).length;
-  const t = { title: '新文件夹', parent_id: null, sort_order: so, is_folder: 1, importance: 0, deadline: null, note: '' };
+  const t = { title: '新项目', parent_id: null, sort_order: so, is_folder: 1, importance: 0, deadline: null, note: '' };
   const res = await API.createTodo(t);
   t.id = res.id; todos.push(t);
   render(); selectNode(t.id);
@@ -437,16 +466,6 @@ document.getElementById('addFolder').addEventListener('click', async () => {
     const el = document.querySelector(`[data-act="title"][data-id="${t.id}"]`);
     if (el) startRename(el, t.id);
   }, 50);
-});
-document.getElementById('expandAll').addEventListener('click', () => {
-  todos.forEach(t => t.expanded = true);
-  todos.forEach(t => API.updateTodo(t.id, { expanded: true }));
-  render();
-});
-document.getElementById('collapseAll').addEventListener('click', () => {
-  todos.forEach(t => t.expanded = false);
-  todos.forEach(t => API.updateTodo(t.id, { expanded: false }));
-  render();
 });
 
 load();

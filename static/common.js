@@ -48,6 +48,17 @@ function daysUntil(ds) {
   const d = new Date(ds + 'T23:59:59');
   return Math.ceil((d - new Date()) / 86400000);
 }
+function fmtDeadline(ds) {
+  if (!ds) return null;
+  const d = daysUntil(ds);
+  const date = new Date(ds);
+  const m = date.getMonth() + 1, day = date.getDate();
+  if (d < 0) return { text: '逾期', cls: 'overdue' };
+  if (d === 0) return { text: '今天', cls: 'today' };
+  if (d === 1) return { text: '明天', cls: '' };
+  if (d <= 7) return { text: d + '天', cls: '' };
+  return { text: `${m}/${day}`, cls: '' };
+}
 function greeting() {
   const h = new Date().getHours();
   return h < 6 ? '夜深了' : h < 12 ? '早上好' : h < 14 ? '中午好' : h < 18 ? '下午好' : '晚上好';

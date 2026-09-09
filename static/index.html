@@ -92,11 +92,11 @@ function render() {
     : ongoing.map(t => {
         const mins = todoTime(todos, dones, t.id);
         const cnt = todoDoneCount(todos, dones, t.id);
-        const dl = t.deadline ? daysUntil(t.deadline) : null;
+        const dl = t.deadline ? fmtDeadline(t.deadline) : null;
         return `<div class="mini-item" onclick="location.href='todos.html'">
           ${t.importance > 0 ? impHtml(t.importance) : `<span class="dot" style="background:${todoColor(todos,t.id)}"></span>`}
           <span class="txt">${esc(t.title)}</span>
-          <span class="time">${dl !== null ? (dl < 0 ? '逾期' : dl === 0 ? '今天' : dl + '天') : (cnt + '条')}</span>
+          <span class="time">${dl ? dl.text : (cnt + '条')}</span>
         </div>`;
       }).join('');
 }
