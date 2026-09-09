@@ -1,6 +1,14 @@
 /* ============================================================
    个人工作台 · 共享脚本 v3
    ============================================================ */
+// Inject distinctive fonts: Noto Serif SC for editorial display, JetBrains Mono for data
+(function injectFonts() {
+  const link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.href = 'https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;700;900&family=JetBrains+Mono:wght@500;700&display=swap';
+  document.head.appendChild(link);
+})();
+
 const API = {
   todos: () => fetch('/api/todos').then(r => r.json()),
   createTodo: (d) => fetch('/api/todos', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(d) }).then(r => r.json()),
