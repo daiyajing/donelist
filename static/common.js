@@ -1,11 +1,11 @@
 /* ============================================================
    个人工作台 · 共享脚本 v3
    ============================================================ */
-// Inject distinctive fonts: Noto Serif SC for editorial display, JetBrains Mono for data
+// Inject font: Sora for display/headings/numbers
 (function injectFonts() {
   const link = document.createElement('link');
   link.rel = 'stylesheet';
-  link.href = 'https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;700;900&family=JetBrains+Mono:wght@500;700&display=swap';
+  link.href = 'https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&display=swap';
   document.head.appendChild(link);
 })();
 
@@ -143,7 +143,7 @@ function isDescendant(todos, id, ancestorId) {
   }
   return desc.has(id);
 }
-const TODO_COLORS = ['#6f8f6a','#5f7a99','#bd8a4e','#b5715a','#7d7195'];
+const TODO_COLORS = ['#5b8a5e','#5b7a99','#b8954a','#a06850','#6b6b8f'];
 function todoColor(todos, id) {
   const root = getRootParent(todos, id);
   if (!root) return TODO_COLORS[0];
