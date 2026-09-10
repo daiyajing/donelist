@@ -20,7 +20,7 @@
     <div class="card stat-card"><div class="label">本周已办总时长</div><div class="val" id="statWeekTime">0<small>小时</small></div></div>
     <div class="card stat-card"><div class="label">本周已办条目</div><div class="val" id="statWeekCount">0<small>条</small></div></div>
     <div class="card stat-card"><div class="label">待办总数</div><div class="val" id="statTodoTotal">0<small>项</small></div></div>
-    <div class="card stat-card accent"><div class="label">今日习惯</div><div class="val" id="statHabitToday">0<small>/0</small></div></div>
+    <div class="card stat-card"><div class="label">今日习惯</div><div class="val" id="statHabitToday">0<small>/0</small></div></div>
   </div>
   <div class="dash-row">
     <div class="dash-col">
@@ -51,7 +51,7 @@ async function load() {
 
 function render() {
   const now = new Date();
-  document.getElementById('greet').innerHTML = greeting() + '，<span class="hl">开始今天的工作吧</span>';
+  document.getElementById('greet').textContent = greeting() + '，开始今天的工作吧';
   document.getElementById('greetSub').textContent = `${now.getFullYear()}年${now.getMonth()+1}月${now.getDate()}日 · 周${DOWS[(now.getDay()+6)%7]}`;
 
   const today = fmtDate(now);
