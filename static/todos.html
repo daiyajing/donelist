@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-<title>思维待办 · 我的工作台</title>
+<title>思维待办</title>
 <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -15,19 +15,12 @@
       <div class="page-head">
         <div><h2>思维待办</h2><div class="sub">双击编辑标题，单击查看详情，拖拽调整层级</div></div>
       </div>
-      <div class="todo-split">
-        <div class="todo-tree-col">
-          <div class="todo-toolbar">
-            <button class="btn primary" id="addTodo"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>添加待办</button>
-            <button class="btn" id="addFolder"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>添加项目</button>
-          </div>
-          <div class="card tree-container" id="treeContainer">
-            <div class="tree-empty">加载中...</div>
-          </div>
-        </div>
-        <div class="todo-detail-col" id="detailCol">
-          <div class="detail-panel" id="detailPanel" style="display:none;"></div>
-        </div>
+      <div class="todo-toolbar">
+        <button class="btn primary" id="addTodo"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>添加待办</button>
+        <button class="btn" id="addFolder"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>添加项目</button>
+      </div>
+      <div class="card tree-container" id="treeContainer">
+        <div class="tree-empty">加载中...</div>
       </div>
     </div>
   </div>
@@ -54,12 +47,10 @@ function render() {
   const roots = visible.filter(t => !t.parent_id).sort((a,b)=>a.sort_order-b.sort_order);
   if (roots.length === 0) {
     container.innerHTML = '<div class="tree-empty">还没有项目，点击「添加待办」或「添加项目」开始</div>';
-    renderDetail();
     return;
   }
   container.innerHTML = roots.map(t => renderNode(t, visible)).join('');
   bindTreeEvents();
-  renderDetail();
 }
 
 function renderNode(t, visible) {
@@ -130,11 +121,19 @@ function bindTreeEvents() {
     // Close any open menus
     document.querySelectorAll('.menu-dropdown.show').forEach(d => d.classList.remove('show'));
 
-    // Title: single click = select, double click = edit
+    // Caret toggle: for folders, open detail modal; for non-folders with children, toggle expand
+    const caretEl = e.target.closest('[data-act="toggle"]');
+    if (caretEl) {
+      e.stopPropagation();
+      openDetail(caretEl.dataset.id);
+      return;
+    }
+
+    // Title: single click = open detail modal
     const titleEl = e.target.closest('[data-act="title"]');
     if (titleEl) {
       e.stopPropagation();
-      selectNode(titleEl.dataset.id);
+      openDetail(titleEl.dataset.id);
       return;
     }
     // Other actions
@@ -142,8 +141,7 @@ function bindTreeEvents() {
     if (!el) return;
     e.stopPropagation();
     const id = el.dataset.id, act = el.dataset.act;
-    if (act === 'toggle') toggleExpand(id);
-    else if (act === 'done') toggleDone(id);
+    if (act === 'done') toggleDone(id);
   };
 
   // Double-click on title = rename
@@ -241,7 +239,8 @@ async function addChild(parentId) {
   const res = await API.createTodo(t);
   t.id = res.id; todos.push(t);
   if (parent && !parent.expanded) { parent.expanded = true; API.updateTodo(parentId, { expanded: true }); }
-  render(); selectNode(t.id);
+  render();
+  openDetail(t.id);
 }
 async function delTodo(id) {
   const t = getTodo(todos, id); if (!t) return;
@@ -260,10 +259,7 @@ async function archiveTodo(id) {
   await API.updateTodo(id, { archived: 1 });
   render(); toast('已归档');
 }
-function selectNode(id) {
-  selectedId = id;
-  render();
-}
+function selectNode(id) { selectedId = id; render(); }
 async function handleDrop(dragId, targetId, position) {
   if (isDescendant(todos, targetId, dragId)) { toast('不能拖到自己的子项里'); return; }
   const dragged = getTodo(todos, dragId);
@@ -325,69 +321,106 @@ function addDoneForTodo(todoId) {
   });
 }
 
-/* ---------- Detail panel ---------- */
-function renderDetail() {
-  const panel = document.getElementById('detailPanel');
-  if (!selectedId) {
-    panel.style.display = 'none';
-    return;
-  }
-  const t = getTodo(todos, selectedId);
-  if (!t) { selectedId = null; renderDetail(); return; }
-  panel.style.display = '';
-  const td = todoDones(todos, dones, selectedId);
+/* ---------- Detail card modal ---------- */
+function openDetail(id) {
+  const t = getTodo(todos, id);
+  if (!t) return;
+  selectedId = id;
+  render();
+  const td = todoDones(todos, dones, id);
   const totalMin = td.reduce((s,d) => s + durationMin(d.start_time, d.end_time), 0);
-  const isMobile = window.innerWidth < 900;
-  if (isMobile) {
-    openModal('详情', getDetailHtml(t, td, totalMin), null, { hideFoot: true });
-    bindDetailEvents(t);
-    return;
-  }
-  panel.innerHTML = getDetailHtml(t, td, totalMin);
-  bindDetailEvents(t);
+  const html = getDetailCardHtml(t, td, totalMin);
+  openModal('', html, null, { hideFoot: true, cardMode: true });
+  bindDetailCardEvents(t);
 }
-function getDetailHtml(t, td, totalMin) {
-  const impBtns = [0,1,2,3].map(i => `<button class="imp-btn ${t.importance===i?'active':''}" data-imp="${i}" data-act="imp">${i===0?'无':IMP_INFO[i].icon+' '+IMP_INFO[i].label}</button>`).join('');
+
+function getDetailCardHtml(t, td, totalMin) {
+  const isFolder = t.is_folder;
+  const color = todoColor(todos, t.id);
+  const folderPath = getFolderPath(todos, t.id);
+  const dlInfo = t.deadline ? fmtDeadline(t.deadline) : null;
+
+  // Deadline/date row
+  const dateLine = dlInfo
+    ? `<div class="dc-date"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg><span class="${dlInfo.cls}">${parseInt(t.deadline.slice(5,7))}月${parseInt(t.deadline.slice(8,10))}日 · ${dlInfo.text}</span></div>`
+    : `<div class="dc-date"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg><span>未设置截止</span></div>`;
+
+  // Importance flag
+  const impFlag = !isFolder && t.importance > 0
+    ? `<span class="dc-flag imp-${t.importance}" title="${IMP_INFO[t.importance].label}优先级"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg></span>`
+    : '';
+
+  // Done checkbox
+  const cbHtml = isFolder ? '' : `<span class="cb ${t.done?'checked':''}" data-act="detail-done">${t.done?'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>':''}</span>`;
+
+  // Importance pills
+  const impPills = !isFolder ? [0,1,2,3].map(i =>
+    `<button class="imp-pill ${t.importance===i?'active':''}" data-imp="${i}" data-act="imp">${i===0?'无':IMP_INFO[i].icon+' '+IMP_INFO[i].label}</button>`
+  ).join('') : '';
+
+  // Category tag
+  const catTag = folderPath.length > 0
+    ? `<div class="dc-tag"><span class="dc-tag-dot" style="background:${color}"></span>${esc(folderPath.join(' › '))}</div>`
+    : `<div class="dc-tag"><span class="dc-tag-dot" style="background:${color}"></span>${isFolder?'项目':'独立待办'}</div>`;
+
+  // Timeline
   const timeline = td.length === 0
-    ? '<div style="color:var(--text-tertiary);font-size:13px;padding:8px 0;">暂无已办记录</div>'
-    : td.map(d => `<div class="timeline-item">
-        <div class="ti-date">${fmtDateShort(d.date)}</div>
-        <div class="ti-body">
-          <div class="ti-title">${esc(d.title)}</div>
-          <div class="ti-time">${d.start_time ? d.start_time+'–'+d.end_time+'（'+fmtMin(durationMin(d.start_time,d.end_time))+'）' : '无具体时间'}</div>
-          ${d.note ? `<div class="ti-note">${esc(d.note)}</div>` : ''}
+    ? `<div class="dc-empty">暂无已办记录</div>`
+    : td.map(d => `<div class="dc-timeline-item">
+        <div class="dc-ti-date">${fmtDateShort(d.date)}</div>
+        <div class="dc-ti-body">
+          <div class="dc-ti-title">${esc(d.title)}</div>
+          <div class="dc-ti-time">${d.start_time ? d.start_time+'–'+d.end_time+' · '+fmtMin(durationMin(d.start_time,d.end_time)) : '无具体时间'}</div>
+          ${d.note ? `<div class="dc-ti-note">${esc(d.note)}</div>` : ''}
         </div>
       </div>`).join('');
-  const cbHtml = t.is_folder ? '' : `<span class="cb ${t.done?'checked':''}" data-act="detail-done">${t.done?'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>':''}</span>`;
+
   return `
-    <div class="detail-head">
-      <div class="dh-top">
-        ${cbHtml}
-        <span class="dh-title" data-act="detail-title" contenteditable="true">${esc(t.title)}</span>
+    <div class="detail-card" data-todo-id="${t.id}">
+      <div class="dc-header">
+        ${dateLine}
+        <div class="dc-header-right">
+          ${impFlag}
+          <span class="dc-close" data-act="close-detail"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>
+        </div>
       </div>
-    </div>
-    <div class="detail-body">
-      ${!t.is_folder ? `<div class="detail-section">
-        <h4>重要性</h4>
-        <div class="imp-selector">${impBtns}</div>
-      </div>` : ''}
-      ${!t.is_folder ? `<div class="detail-section">
-        <h4>截止时间</h4>
-        <input type="date" id="detailDeadline" value="${t.deadline || ''}">
-      </div>` : ''}
-      <div class="detail-section">
-        <h4>备注</h4>
-        <textarea id="detailNote" placeholder="写下想法、备注、灵感...">${esc(t.note || '')}</textarea>
+      <div class="dc-divider"></div>
+      <div class="dc-body">
+        <div class="dc-title-row">
+          ${cbHtml}
+          <span class="dc-title" data-act="detail-title" contenteditable="true">${esc(t.title)}</span>
+        </div>
+        <div class="dc-note" data-act="detail-note" contenteditable="true" data-placeholder="备注 / 想法">${esc(t.note || '')}</div>
       </div>
-      ${!t.is_folder ? `<div class="detail-section">
-        <h4>工作动态（${td.length}条已办 · 合计 ${fmtMin(totalMin)}）</h4>
-        <div class="timeline">${timeline}</div>
+      ${!isFolder ? `
+      <div class="dc-section">
+        <div class="dc-section-label">重要性</div>
+        <div class="imp-selector">${impPills}</div>
+      </div>
+      <div class="dc-section">
+        <div class="dc-section-label">截止日期</div>
+        <input type="date" class="dc-deadline-input" id="detailDeadline" value="${t.deadline || ''}">
       </div>` : ''}
+      ${!isFolder ? `
+      <div class="dc-section">
+        <div class="dc-section-label">工作动态 · ${td.length}条 · ${fmtMin(totalMin)}</div>
+        <div class="dc-timeline">${timeline}</div>
+      </div>` : ''}
+      <div class="dc-footer">
+        ${catTag}
+        <span class="dc-more" data-act="detail-menu"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg></span>
+      </div>
     </div>
   `;
 }
-function bindDetailEvents(t) {
-  const scope = document.getElementById('modalMask')?.classList.contains('show') ? document.getElementById('modalBody') : document.getElementById('detailPanel');
+
+function bindDetailCardEvents(t) {
+  const scope = document.getElementById('modalBody');
+  if (!scope) return;
+
+  // Close button
+  const closeBtn = scope.querySelector('[data-act="close-detail"]');
+  if (closeBtn) closeBtn.onclick = () => closeModal();
 
   // Editable title
   const titleEl = scope.querySelector('[data-act="detail-title"]');
@@ -406,22 +439,45 @@ function bindDetailEvents(t) {
     });
   }
 
-  // Done checkbox in detail
+  // Editable note
+  const noteEl = scope.querySelector('[data-act="detail-note"]');
+  if (noteEl) {
+    noteEl.addEventListener('blur', async () => {
+      const txt = noteEl.textContent.trim();
+      if (txt !== (t.note || '')) {
+        t.note = txt;
+        API.updateTodo(t.id, { note: t.note });
+      }
+    });
+  }
+
+  // Done checkbox
   const doneCb = scope.querySelector('[data-act="detail-done"]');
   if (doneCb) {
     doneCb.onclick = async () => {
       t.done = !t.done;
       API.updateTodo(t.id, { done: t.done });
       render();
+      // Update checkbox visual
+      if (t.done) {
+        doneCb.classList.add('checked');
+        doneCb.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+      } else {
+        doneCb.classList.remove('checked');
+        doneCb.innerHTML = '';
+      }
     };
   }
 
-  // Importance buttons
+  // Importance pills
   scope.querySelectorAll('[data-act="imp"]').forEach(btn => {
     btn.onclick = async () => {
       const imp = parseInt(btn.dataset.imp);
       t.importance = t.importance === imp ? 0 : imp;
       API.updateTodo(t.id, { importance: t.importance });
+      // Update pill states
+      scope.querySelectorAll('[data-act="imp"]').forEach(b => b.classList.remove('active'));
+      if (t.importance === imp) btn.classList.add('active');
       render();
     };
   });
@@ -430,9 +486,27 @@ function bindDetailEvents(t) {
   const dl = scope.querySelector('#detailDeadline');
   if (dl) dl.onchange = async () => { t.deadline = dl.value || null; API.updateTodo(t.id, { deadline: t.deadline }); render(); };
 
-  // Note
-  const note = scope.querySelector('#detailNote');
-  if (note) note.onblur = async () => { t.note = note.value; API.updateTodo(t.id, { note: t.note }); };
+  // More menu
+  const moreBtn = scope.querySelector('[data-act="detail-menu"]');
+  if (moreBtn) {
+    moreBtn.onclick = (e) => {
+      e.stopPropagation();
+      // Reuse the tree's menu by triggering add-done
+      closeModal();
+      // Show a simple action menu
+      const actions = [
+        { label: '📝 添加已办', act: () => { addDoneForTodo(t.id); } },
+        { label: '➕ 添加子任务', act: () => { addChild(t.id); } },
+        { label: '📦 归档', act: () => { archiveTodo(t.id); } },
+        { label: '🗑 删除', act: () => { delTodo(t.id); }, danger: true },
+      ];
+      const menuHtml = actions.map((a, i) => `<div class="menu-item ${a.danger?'danger':''}" data-idx="${i}">${a.label}</div>`).join('');
+      openModal('', `<div class="detail-action-menu">${menuHtml}</div>`, null, { hideFoot: true });
+      document.querySelectorAll('.detail-action-menu .menu-item').forEach((el, i) => {
+        el.onclick = () => { closeModal(); actions[i].act(); };
+      });
+    };
+  }
 }
 
 /* ---------- Toolbar ---------- */
@@ -449,11 +523,19 @@ async function addTodoToInbox() {
   const res = await API.createTodo(t);
   t.id = res.id; todos.push(t);
   if (!inbox.expanded) { inbox.expanded = true; API.updateTodo(inbox.id, { expanded: true }); }
-  render(); selectNode(t.id);
+  render();
+  openDetail(t.id);
   setTimeout(() => {
-    const el = document.querySelector(`[data-act="title"][data-id="${t.id}"]`);
-    if (el) startRename(el, t.id);
-  }, 50);
+    const scope = document.getElementById('modalBody');
+    if (scope) {
+      const titleEl = scope.querySelector('[data-act="detail-title"]');
+      if (titleEl) {
+        titleEl.focus();
+        const range = document.createRange(); range.selectNodeContents(titleEl);
+        const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+      }
+    }
+  }, 100);
 }
 document.getElementById('addTodo').addEventListener('click', addTodoToInbox);
 document.getElementById('addFolder').addEventListener('click', async () => {
@@ -461,11 +543,19 @@ document.getElementById('addFolder').addEventListener('click', async () => {
   const t = { title: '新项目', parent_id: null, sort_order: so, is_folder: 1, importance: 0, deadline: null, note: '' };
   const res = await API.createTodo(t);
   t.id = res.id; todos.push(t);
-  render(); selectNode(t.id);
+  render();
+  openDetail(t.id);
   setTimeout(() => {
-    const el = document.querySelector(`[data-act="title"][data-id="${t.id}"]`);
-    if (el) startRename(el, t.id);
-  }, 50);
+    const scope = document.getElementById('modalBody');
+    if (scope) {
+      const titleEl = scope.querySelector('[data-act="detail-title"]');
+      if (titleEl) {
+        titleEl.focus();
+        const range = document.createRange(); range.selectNodeContents(titleEl);
+        const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+      }
+    }
+  }, 100);
 });
 
 load();

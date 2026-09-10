@@ -112,7 +112,7 @@ def row_to_dict(row):
 # ---------- Pages ----------
 @app.route("/")
 def index():
-    return send_from_directory(STATIC_DIR, "index.html")
+    return send_from_directory(STATIC_DIR, "todos.html")
 
 
 @app.route("/<path:filename>")

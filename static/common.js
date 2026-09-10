@@ -158,13 +158,20 @@ function openModal(title, bodyHtml, onConfirm, opts = {}) {
     document.body.appendChild(mask);
     mask.addEventListener('click', e => { if (e.target.id === 'modalMask') closeModal(); });
   }
-  const footHtml = opts.hideFoot ? '' : `<div class="modal-foot"><button class="btn" id="modalCancel">取消</button><button class="btn primary" id="modalOk">确定</button></div>`;
-  mask.innerHTML = `<div class="modal"><h3 id="modalTitle"></h3><div id="modalBody"></div>${footHtml}</div>`;
-  document.getElementById('modalTitle').textContent = title;
-  document.getElementById('modalBody').innerHTML = bodyHtml;
-  if (!opts.hideFoot) {
-    document.getElementById('modalCancel').onclick = closeModal;
-    document.getElementById('modalOk').onclick = onConfirm;
+  if (opts.cardMode) {
+    mask.classList.add('card-mode');
+    mask.innerHTML = `<div class="modal card-modal"><div id="modalBody"></div></div>`;
+    document.getElementById('modalBody').innerHTML = bodyHtml;
+  } else {
+    mask.classList.remove('card-mode');
+    const footHtml = opts.hideFoot ? '' : `<div class="modal-foot"><button class="btn" id="modalCancel">取消</button><button class="btn primary" id="modalOk">确定</button></div>`;
+    mask.innerHTML = `<div class="modal"><h3 id="modalTitle"></h3><div id="modalBody"></div>${footHtml}</div>`;
+    document.getElementById('modalTitle').textContent = title;
+    document.getElementById('modalBody').innerHTML = bodyHtml;
+    if (!opts.hideFoot) {
+      document.getElementById('modalCancel').onclick = closeModal;
+      document.getElementById('modalOk').onclick = onConfirm;
+    }
   }
   mask.classList.add('show');
   setTimeout(() => { const f = document.querySelector('#modalBody input, #modalBody textarea'); if (f) f.focus(); }, 50);
@@ -175,7 +182,6 @@ function esc(s) { const d = document.createElement('div'); d.textContent = s ?? 
 
 /* ---------- Navigation ---------- */
 const NAV_ITEMS = [
-  { id: 'index', label: '首页', href: 'index.html', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>' },
   { id: 'todos', label: '待办', href: 'todos.html', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v6l-5 9a2 2 0 0 0 2 3h12a2 2 0 0 0 2-3l-5-9V3"/><path d="M9 3h6"/></svg>' },
   { id: 'calendar', label: '日历', href: 'calendar.html', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>' },
   { id: 'stats', label: '统计', href: 'stats.html', icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="8" width="3" height="10"/><rect x="17" y="5" width="3" height="13"/></svg>' },
@@ -186,12 +192,11 @@ function getDateStr() {
   return `${d.getMonth()+1}月${d.getDate()}日 周${DOWS[(d.getDay()+6)%7]}`;
 }
 function renderSidebar(activeId) {
-  const dateStr = getDateStr();
   const items = NAV_ITEMS.map(it => `<a class="nav-item ${it.id===activeId?'active':''}" href="${it.href}">${it.icon}${it.label}</a>`).join('');
-  return `<div class="brand"><h1>我的工作台</h1><p>${dateStr}</p></div><nav class="nav">${items}</nav>`;
+  return `<nav class="nav">${items}</nav>`;
 }
 function renderTopbar() {
-  return `<h1>我的工作台</h1><span class="date">${getDateStr()}</span>`;
+  return `<span class="date">${getDateStr()}</span>`;
 }
 function renderTabbar(activeId) {
   return NAV_ITEMS.map(it => `<a class="tab-item ${it.id===activeId?'active':''}" href="${it.href}">${it.icon}<span>${it.label}</span></a>`).join('');
